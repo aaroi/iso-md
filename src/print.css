@@ -1,0 +1,45 @@
+/* Print stylesheet — used for PDF export */
+@page {
+  size: A4;
+  margin: 2cm;
+}
+
+@media print {
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .drag-region { display: none !important; }
+  #editor {
+    padding: 0 !important;
+    display: block !important;
+  }
+  .milkdown {
+    max-width: none !important;
+    width: 100% !important;
+  }
+  .milkdown a {
+    color: #000 !important;
+    text-decoration: underline;
+  }
+  .milkdown pre, .milkdown code {
+    background: #f4f4f4 !important;
+    color: #000 !important;
+    border-color: #ccc !important;
+  }
+  .milkdown .tableWrapper {
+    border-color: #ccc !important;
+    overflow: visible !important;
+  }
+  .milkdown th, .milkdown td {
+    border-color: #ccc !important;
+    color: #000 !important;
+  }
+  .milkdown th { background: #f4f4f4 !important; }
+  .milkdown h1, .milkdown h2, .milkdown h3 {
+    page-break-after: avoid;
+  }
+  .milkdown pre, .milkdown blockquote, .milkdown table {
+    page-break-inside: avoid;
+  }
+}

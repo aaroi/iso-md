@@ -1,0 +1,398 @@
+/* ai.md — minimal monospace markdown editor, grayscale only */
+
+:root {
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    Arial, sans-serif;
+  --font-body: var(--font-mono);
+
+  /* Light palette — pure grayscale */
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --fg-muted: #707070;
+  --border: #e5e5e5;
+  --border-strong: #b5b5b5;
+  --accent: #1a1a1a;
+  --code-bg: #f3f3f3;
+  --selection: rgba(0, 0, 0, 0.12);
+
+  --content-max: 540px;
+  --content-pad-x: 56px;
+  --content-pad-y: 48px;
+  --table-breakout-max: 1100px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --fg: #e8e8e8;
+    --fg-muted: #9a9a9a;
+    --border: #2a2a2a;
+    --border-strong: #555555;
+    --accent: #e8e8e8;
+    --code-bg: #1d1d1d;
+    --selection: rgba(255, 255, 255, 0.16);
+  }
+}
+
+html.dark {
+  --bg: #121212;
+  --fg: #e8e8e8;
+  --fg-muted: #9a9a9a;
+  --border: #2a2a2a;
+  --border-strong: #555555;
+  --accent: #e8e8e8;
+  --code-bg: #1d1d1d;
+  --selection: rgba(255, 255, 255, 0.16);
+}
+
+html.light {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --fg-muted: #707070;
+  --border: #e5e5e5;
+  --border-strong: #b5b5b5;
+  --accent: #1a1a1a;
+  --code-bg: #f3f3f3;
+  --selection: rgba(0, 0, 0, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-feature-settings: "liga" 0, "calt" 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+/* Font mode: system font override (toggled via toolbar button) */
+html.font-system {
+  --font-body: var(--font-system);
+}
+html.font-system body {
+  font-feature-settings: normal;
+}
+
+::selection { background: var(--selection); }
+
+#editor {
+  min-height: 100vh;
+  width: 100%;
+  padding: var(--content-pad-y) var(--content-pad-x);
+  display: flex;
+  justify-content: center;
+}
+
+/* -----------------------------------------------------------------
+   ProseMirror base (inlined — skips prosemirror-tables' fixed layout
+   that forces width:100% and causes narrow-column letter-wrapping)
+   ----------------------------------------------------------------- */
+.ProseMirror {
+  position: relative;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+}
+.ProseMirror pre { white-space: pre-wrap; }
+.ProseMirror li { position: relative; }
+.ProseMirror [draggable][contenteditable="false"] { user-select: text; }
+.ProseMirror-selectednode { outline: 2px solid var(--border-strong); }
+.ProseMirror .tableWrapper { overflow-x: auto; }
+.ProseMirror td, .ProseMirror th {
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+.ProseMirror .selectedCell::after {
+  z-index: 2;
+  position: absolute;
+  content: '';
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: var(--selection);
+  pointer-events: none;
+}
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px; top: 0; bottom: 0;
+  width: 4px;
+  z-index: 20;
+  background: var(--border-strong);
+  pointer-events: none;
+}
+.ProseMirror.resize-cursor { cursor: col-resize; }
+.ProseMirror-gapcursor {
+  display: none;
+  pointer-events: none;
+  position: absolute;
+}
+.ProseMirror-gapcursor::after {
+  content: "";
+  display: block;
+  position: absolute;
+  top: -2px;
+  width: 20px;
+  border-top: 1px solid var(--fg);
+  animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
+}
+.ProseMirror-focused .ProseMirror-gapcursor { display: block; }
+@keyframes ProseMirror-cursor-blink { to { visibility: hidden; } }
+
+/* Milkdown / ProseMirror content root */
+.milkdown {
+  width: 100%;
+  max-width: var(--content-max);
+  color: var(--fg);
+  outline: none;
+  caret-color: var(--fg);
+  font-family: var(--font-body);
+}
+
+/* Keep prose content in mono by default; the system-font class swaps body/editor */
+.milkdown h1, .milkdown h2, .milkdown h3,
+.milkdown h4, .milkdown h5, .milkdown h6 {
+  font-family: var(--font-body);
+}
+
+.ProseMirror { outline: none; }
+
+/* Typography */
+.milkdown h1, .milkdown h2, .milkdown h3,
+.milkdown h4, .milkdown h5, .milkdown h6 {
+  font-weight: 700;
+  color: var(--fg);
+  line-height: 1.3;
+  margin: 2.2em 0 0.7em;
+  letter-spacing: 0;
+}
+.milkdown h1 { font-size: 1.6rem; margin-top: 0.4em; }
+.milkdown h2 { font-size: 1.3rem; margin-top: 2.4em; }
+.milkdown h3 { font-size: 1.1rem; }
+.milkdown h4 { font-size: 1rem; }
+
+.milkdown p {
+  margin: 0.9em 0;
+  color: var(--fg);
+}
+
+.milkdown a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--border-strong);
+}
+.milkdown a:hover { text-decoration-color: var(--fg); }
+
+.milkdown blockquote {
+  border-left: 2px solid var(--border-strong);
+  margin: 1.2em 0;
+  padding: 0 0 0 14px;
+  color: var(--fg-muted);
+}
+
+.milkdown code,
+.milkdown :not(pre) > code {
+  font-family: var(--font-mono);
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+
+.milkdown pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px 14px;
+  margin: 1.4em 0;
+  overflow-x: auto;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.milkdown pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+.milkdown hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+.milkdown ul, .milkdown ol {
+  padding-left: 1.8em;
+  margin: 0.8em 0;
+}
+.milkdown li { margin: 0.35em 0; }
+.milkdown li > p { margin: 0.2em 0; }
+
+.milkdown strong { font-weight: 700; color: var(--fg); }
+.milkdown em { font-style: italic; }
+.milkdown del { text-decoration: line-through; color: var(--fg-muted); }
+
+/* -----------------------------------------------------------------
+   TABLES — pure grayscale, horizontal scroll when wide.
+
+   Milkdown wraps tables in `.tableWrapper` (from prosemirror-tables).
+   We make the wrapper scroll and let the table grow to its natural
+   width instead of squashing every column to 1/n of the container.
+   ----------------------------------------------------------------- */
+
+/* Tables break out of the narrow prose column so text-heavy columns
+   have room to breathe. The wrapper extends to nearly the full window
+   width (100vw - 20px), centered over the narrower .milkdown parent
+   via negative margins. `table { width: 100% }` + `table-layout: auto`
+   distributes the extra space proportionally to each column's preferred
+   width, so prose cells grow and numeric cells stay tight. */
+/* Tables break out of the narrow prose column using the full window
+   width (minus ~20px), centered over the narrower .milkdown parent
+   via symmetric negative margins.
+
+   Outer border and rounded corners live on the WRAPPER, not the table.
+   Putting overflow:hidden on the <table> (to clip border-radius) caused
+   WebKit to drop content-based column distribution, so every column
+   came out nearly the same width. Keeping the table free of overflow
+   lets `table-layout: auto` properly give prose-heavy cells more space. */
+.milkdown .tableWrapper,
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 1.6em 0;
+  border: 1px solid var(--border);
+  width: min(var(--table-breakout-max), calc(100vw - 20px));
+  max-width: min(var(--table-breakout-max), calc(100vw - 20px));
+  margin-inline: calc(
+    (var(--content-max) - min(var(--table-breakout-max), calc(100vw - 20px))) / 2
+  );
+}
+
+.milkdown table,
+.ProseMirror table {
+  border-collapse: collapse;
+  margin: 0;
+  width: 100%;
+  table-layout: auto;
+  font-size: 0.92em;
+}
+
+.milkdown th, .milkdown td,
+.ProseMirror th, .ProseMirror td {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+  color: var(--fg);
+  background: transparent;
+}
+.milkdown th:last-child, .milkdown td:last-child,
+.ProseMirror th:last-child, .ProseMirror td:last-child { border-right: none; }
+.milkdown tr:last-child td,
+.ProseMirror tr:last-child td { border-bottom: none; }
+
+.milkdown th,
+.ProseMirror th {
+  background: var(--code-bg);
+  font-weight: 700;
+  /* Let multi-word headers ("Drop fit") wrap on spaces so the column
+     isn't forced wider than its data cells. */
+}
+
+/* Safety net: reserve more width for the rightmost column, which in
+   practice is almost always the description/notes/comments column in
+   markdown tables. Auto-layout can then extend it further if content
+   warrants, but never below ~150px. */
+.milkdown table tr > *:last-child,
+.ProseMirror table tr > *:last-child {
+  min-width: 14em;
+}
+
+/* prosemirror-tables selection/resize helpers — grayscale */
+.milkdown .tableWrapper .selectedCell {
+  background: var(--selection) !important;
+}
+.milkdown .column-resize-handle {
+  background: var(--border-strong);
+}
+
+/* Task lists */
+.milkdown ul[data-task-list],
+.milkdown li[data-task-list-item] {
+  list-style: none;
+  padding-left: 0;
+}
+.milkdown input[type="checkbox"] {
+  accent-color: var(--fg);
+  margin-right: 6px;
+}
+
+.milkdown img {
+  max-width: 100%;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+/* Drag region for native window drag on macOS */
+.drag-region {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 28px;
+  -webkit-app-region: drag;
+  z-index: 10;
+}
+
+/* Floating toolbar — top right, minimal text buttons */
+.toolbar {
+  position: fixed;
+  top: 8px;
+  right: 14px;
+  z-index: 50;
+  display: flex;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.toolbar button {
+  -webkit-app-region: no-drag;
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  padding: 3px 9px;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.toolbar button:hover {
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+.toolbar button:active {
+  background: var(--code-bg);
+}
+
+/* Font toggle button reflects the current font mode in its own label */
+#font-toggle { font-family: var(--font-body); }
