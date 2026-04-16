@@ -266,12 +266,14 @@ html.font-system body {
    WebKit to drop content-based column distribution, so every column
    came out nearly the same width. Keeping the table free of overflow
    lets `table-layout: auto` properly give prose-heavy cells more space. */
+/* Table wrapper: break out of narrow prose column + horizontal scroll.
+   No border here — the outer border lives on the <table> via
+   border-collapse: collapse (merges with inner cell borders, one color). */
 .milkdown .tableWrapper,
 .ProseMirror .tableWrapper {
   overflow-x: auto;
   overflow-y: hidden;
   margin: 1.6em 0;
-  border: 1px solid var(--border);
   width: min(var(--table-breakout-max), calc(100vw - 20px));
   max-width: min(var(--table-breakout-max), calc(100vw - 20px));
   margin-inline: calc(
@@ -282,8 +284,14 @@ html.font-system body {
 .milkdown table,
 .ProseMirror table {
   border-collapse: collapse;
+  border: 1px solid var(--border);
   margin: 0;
-  width: 100%;
+  /* Content-adaptive sizing: table width = sum of columns' natural
+     max-content widths, but never exceeds the wrapper. Browsers shrink
+     proportionally when forced below natural, hitting long-content
+     columns harder than short ones (that's `table-layout: auto`). */
+  width: max-content;
+  max-width: 100%;
   table-layout: auto;
   font-size: 0.92em;
 }
@@ -292,7 +300,7 @@ html.font-system body {
 .ProseMirror th, .ProseMirror td {
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
-  padding: 6px 10px;
+  padding: 5px 10px;
   text-align: left;
   vertical-align: top;
   white-space: normal;
@@ -300,6 +308,24 @@ html.font-system body {
   overflow-wrap: break-word;
   color: var(--fg);
   background: transparent;
+}
+
+/* ProseMirror wraps each cell's content in <p>. Two things happen here:
+   1. Zero the page-level p-margin so rows aren't gigantic.
+   2. Cap the paragraph's max-width. This is what makes column sizing
+      CONTENT-ADAPTIVE: browsers auto-layout gives each column a share
+      of the available width proportional to its max-content. Without
+      a cap, a cell with a long paragraph demands ~1200px of preferred
+      width, which blows out the whole distribution and squeezes other
+      columns. Capping long text to 32em means a cell with short text
+      stays narrow, a cell with medium text gets medium-width, and a
+      cell with a long paragraph wraps at ~32em — so "more content =
+      wider column" happens automatically, with no hard-coded column
+      indexes. */
+.milkdown th > p, .milkdown td > p,
+.ProseMirror th > p, .ProseMirror td > p {
+  margin: 0;
+  max-width: 32em;
 }
 .milkdown th:last-child, .milkdown td:last-child,
 .ProseMirror th:last-child, .ProseMirror td:last-child { border-right: none; }
@@ -310,18 +336,8 @@ html.font-system body {
 .ProseMirror th {
   background: var(--code-bg);
   font-weight: 700;
-  /* Let multi-word headers ("Drop fit") wrap on spaces so the column
-     isn't forced wider than its data cells. */
 }
 
-/* Safety net: reserve more width for the rightmost column, which in
-   practice is almost always the description/notes/comments column in
-   markdown tables. Auto-layout can then extend it further if content
-   warrants, but never below ~150px. */
-.milkdown table tr > *:last-child,
-.ProseMirror table tr > *:last-child {
-  min-width: 14em;
-}
 
 /* prosemirror-tables selection/resize helpers — grayscale */
 .milkdown .tableWrapper .selectedCell {
