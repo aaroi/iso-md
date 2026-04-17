@@ -300,7 +300,7 @@ html.font-system body {
 .ProseMirror th, .ProseMirror td {
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
-  padding: 5px 10px;
+  padding: 6px 8px;
   text-align: left;
   vertical-align: top;
   white-space: normal;

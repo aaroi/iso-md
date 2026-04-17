@@ -1,9 +1,11 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { readTextFile, writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import { open as openDialog, save as saveDialog, ask } from "@tauri-apps/plugin-dialog";
+import html2pdf from "html2pdf.js";
 import { createEditor, type EditorHandle } from "./editor";
+import { installAutoSizer, sizeAllTables } from "./table-sizer";
 
 interface AppState {
   path: string | null;
@@ -94,15 +96,57 @@ function toggleDarkMode() {
   }
 }
 
-async function exportPdf() {
-  // Use the Tauri command so the native macOS print sheet opens reliably
-  // (window.print() is a no-op in WKWebView without this).
+async function exportPdf(state: AppState) {
+  // Propose a default filename based on the open file
+  const defaultName = state.path
+    ? (state.path.split("/").pop() || "document").replace(/\.md$/i, ".pdf")
+    : "Untitled.pdf";
+
+  // Ask where to save — this is the export dialog the user wants
+  const target = await saveDialog({
+    defaultPath: defaultName,
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+  if (!target) return;
+
+  // Force light theme while rendering so PDF has white background + black text
+  const html = document.documentElement;
+  const hadDark = html.classList.contains("dark");
+  const hadLight = html.classList.contains("light");
+  html.classList.remove("dark");
+  html.classList.add("light");
+
   try {
-    await invoke("export_pdf");
+    const el = document.querySelector(".milkdown") as HTMLElement | null;
+    if (!el) throw new Error("editor content not found");
+
+    // Re-run table sizing under the light theme in case fonts render differently
+    sizeAllTables(document);
+
+    // html2pdf's TS types miss a few options we need; cast to allow them.
+    const opts = {
+      margin: [14, 14, 14, 14],                             // mm
+      image: { type: "jpeg", quality: 0.95 },
+      html2canvas: { scale: 2, backgroundColor: "#ffffff", useCORS: true },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css", "legacy"] },
+    } as any;
+
+    const blob = (await html2pdf()
+      .from(el)
+      .set(opts)
+      .outputPdf("blob")) as Blob;
+
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    await writeFile(target, bytes);
   } catch (err) {
-    console.error("export_pdf failed:", err);
-    // Fallback: in-webview print (may or may not work)
-    window.print();
+    console.error("export PDF failed:", err);
+    await ask(`PDF export failed: ${err}`, { title: "ai.md", kind: "error" });
+  } finally {
+    // Restore theme
+    html.classList.remove("light");
+    if (hadDark) html.classList.add("dark");
+    if (hadLight) html.classList.add("light");
   }
 }
 
@@ -135,7 +179,10 @@ async function init() {
 
   // Wire up toolbar buttons
   document.getElementById("font-toggle")?.addEventListener("click", toggleFont);
-  document.getElementById("export-btn")?.addEventListener("click", exportPdf);
+  document.getElementById("export-btn")?.addEventListener("click", () => exportPdf(state));
+
+  // Install the content-adaptive column sizer for all tables in the editor
+  installAutoSizer(root);
 
   const state: AppState = { path: null, dirty: false, editor };
   editor.onChange(async () => {
@@ -153,7 +200,7 @@ async function init() {
       case "open": await openFileDialog(state); break;
       case "save": await save(state); break;
       case "save-as": await saveAs(state); break;
-      case "export-pdf": await exportPdf(); break;
+      case "export-pdf": await exportPdf(state); break;
       case "toggle-dark": toggleDarkMode(); break;
       case "zoom-in": zoomIn(); break;
       case "zoom-out": zoomOut(); break;
