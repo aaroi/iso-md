@@ -16,10 +16,6 @@ fn frontend_ready(state: State<PendingFiles>) -> Vec<String> {
     std::mem::take(&mut *state.paths.lock().unwrap())
 }
 
-#[tauri::command]
-async fn export_pdf(window: tauri::WebviewWindow) -> Result<(), String> {
-    window.print().map_err(|e| e.to_string())
-}
 
 fn build_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     // App submenu (macOS) — about, services, hide, quit
@@ -128,7 +124,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(pending)
-        .invoke_handler(tauri::generate_handler![frontend_ready, export_pdf])
+        .invoke_handler(tauri::generate_handler![frontend_ready])
         .setup(|app| {
             let handle = app.handle().clone();
             let menu = build_menu(&handle)?;
@@ -149,6 +145,7 @@ pub fn run() {
                     let _ = window.set_position(LogicalPosition::new(0.0, MENU_BAR));
                     let _ = window.set_size(LogicalSize::new(680.0, logical_h - MENU_BAR));
                 }
+
             }
 
             Ok(())

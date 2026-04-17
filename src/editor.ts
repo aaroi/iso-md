@@ -13,6 +13,8 @@ export interface EditorHandle {
   getMarkdown(): string;
   setMarkdown(md: string): Promise<void>;
   onChange(cb: (md: string) => void): void;
+  /** Access the current editor's Milkdown ctx (null before first create). */
+  getCtx(): import("@milkdown/ctx").Ctx | null;
 }
 
 export async function createEditor(root: HTMLElement): Promise<EditorHandle> {
@@ -64,6 +66,12 @@ export async function createEditor(root: HTMLElement): Promise<EditorHandle> {
     },
     onChange(cb) {
       changeCallback = cb;
+    },
+    getCtx() {
+      if (!currentEditor) return null;
+      let ctx: import("@milkdown/ctx").Ctx | null = null;
+      currentEditor.action((c) => { ctx = c; });
+      return ctx;
     },
   };
 }

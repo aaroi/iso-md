@@ -20,7 +20,6 @@
   --content-max: 540px;
   --content-pad-x: 56px;
   --content-pad-y: 48px;
-  --table-breakout-max: 1100px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -266,33 +265,21 @@ html.font-system body {
    WebKit to drop content-based column distribution, so every column
    came out nearly the same width. Keeping the table free of overflow
    lets `table-layout: auto` properly give prose-heavy cells more space. */
-/* Table wrapper: break out of narrow prose column + horizontal scroll.
-   No border here — the outer border lives on the <table> via
-   border-collapse: collapse (merges with inner cell borders, one color). */
-.milkdown .tableWrapper,
-.ProseMirror .tableWrapper {
-  overflow-x: auto;
-  overflow-y: hidden;
-  margin: 1.6em 0;
-  width: min(var(--table-breakout-max), calc(100vw - 20px));
-  max-width: min(var(--table-breakout-max), calc(100vw - 20px));
-  margin-inline: calc(
-    (var(--content-max) - min(var(--table-breakout-max), calc(100vw - 20px))) / 2
-  );
-}
-
+/* Milkdown doesn't wrap tables in .tableWrapper (verified empirically
+   via debug logging). So styling goes directly on <table>.
+   Per-column PIXEL widths are injected by table-sizer.ts into <head>
+   via a <style> element (PM can't strip stylesheets). Table uses
+   width: max-content so its total width = sum of column widths;
+   max-width caps the total at the viewport. */
 .milkdown table,
 .ProseMirror table {
   border-collapse: collapse;
   border: 1px solid var(--border);
-  margin: 0;
-  /* Content-adaptive sizing: table width = sum of columns' natural
-     max-content widths, but never exceeds the wrapper. Browsers shrink
-     proportionally when forced below natural, hitting long-content
-     columns harder than short ones (that's `table-layout: auto`). */
-  width: max-content;
-  max-width: 100%;
-  table-layout: auto;
+  margin: 1.6em 0 1.6em 0;
+  margin-left: 0;                      /* left-align (was centered) */
+  table-layout: fixed;
+  width: max-content;                  /* grow to sum of column widths */
+  max-width: calc(100vw - 40px);       /* never wider than the viewport */
   font-size: 0.92em;
 }
 
@@ -310,22 +297,12 @@ html.font-system body {
   background: transparent;
 }
 
-/* ProseMirror wraps each cell's content in <p>. Two things happen here:
-   1. Zero the page-level p-margin so rows aren't gigantic.
-   2. Cap the paragraph's max-width. This is what makes column sizing
-      CONTENT-ADAPTIVE: browsers auto-layout gives each column a share
-      of the available width proportional to its max-content. Without
-      a cap, a cell with a long paragraph demands ~1200px of preferred
-      width, which blows out the whole distribution and squeezes other
-      columns. Capping long text to 32em means a cell with short text
-      stays narrow, a cell with medium text gets medium-width, and a
-      cell with a long paragraph wraps at ~32em — so "more content =
-      wider column" happens automatically, with no hard-coded column
-      indexes. */
+/* Zero the page-level p-margin for cell content, otherwise rows inherit
+   the 0.9em top/bottom margin and become huge. Column sizing itself is
+   driven by table-sizer.ts (pixel widths injected into <head>). */
 .milkdown th > p, .milkdown td > p,
 .ProseMirror th > p, .ProseMirror td > p {
   margin: 0;
-  max-width: 32em;
 }
 .milkdown th:last-child, .milkdown td:last-child,
 .ProseMirror th:last-child, .ProseMirror td:last-child { border-right: none; }

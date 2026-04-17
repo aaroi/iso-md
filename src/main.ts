@@ -31,6 +31,13 @@ async function openFile(state: AppState, path: string) {
     state.path = path;
     state.dirty = false;
     await updateTitle(state);
+    // Size columns after the file's tables render. Widths get injected
+    // as CSS rules into <head>, so they survive PM's DOM replacements.
+    requestAnimationFrame(() => {
+      sizeAllTables();
+      setTimeout(sizeAllTables, 120);
+      setTimeout(sizeAllTables, 400);
+    });
   } catch (err) {
     console.error("Failed to open file:", err);
     await ask(`Could not open file:\n${err}`, { title: "ai.md", kind: "error" });
@@ -80,21 +87,53 @@ async function newFile(state: AppState) {
   await updateTitle(state);
 }
 
-function toggleDarkMode() {
-  const html = document.documentElement;
-  const hasLight = html.classList.contains("light");
-  const hasDark = html.classList.contains("dark");
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+// Theme: three modes — "system" (follow prefers-color-scheme), "light", "dark".
+type ThemeMode = "system" | "light" | "dark";
 
-  html.classList.remove("light", "dark");
-  if (hasLight) {
-    html.classList.add("dark");
-  } else if (hasDark) {
-    html.classList.add("light");
-  } else {
-    html.classList.add(prefersDark ? "light" : "dark");
-  }
+function getThemeMode(): ThemeMode {
+  const html = document.documentElement;
+  if (html.classList.contains("light")) return "light";
+  if (html.classList.contains("dark")) return "dark";
+  return "system";
 }
+
+function applyThemeMode(mode: ThemeMode) {
+  const html = document.documentElement;
+  html.classList.remove("light", "dark");
+  if (mode === "light") html.classList.add("light");
+  else if (mode === "dark") html.classList.add("dark");
+  // "system" = no class, CSS @media (prefers-color-scheme) takes over.
+  updateThemeButtonLabel();
+  try { localStorage.setItem("ai.md.theme", mode); } catch { /* noop */ }
+}
+
+function updateThemeButtonLabel() {
+  const btn = document.getElementById("theme-toggle");
+  if (!btn) return;
+  const mode = getThemeMode();
+  btn.textContent = mode === "system" ? "Auto" : mode === "light" ? "Light" : "Dark";
+}
+
+function cycleTheme() {
+  const order: ThemeMode[] = ["system", "light", "dark"];
+  const current = getThemeMode();
+  const next = order[(order.indexOf(current) + 1) % order.length];
+  applyThemeMode(next);
+}
+
+function restoreThemeFromStorage() {
+  try {
+    const stored = localStorage.getItem("ai.md.theme") as ThemeMode | null;
+    if (stored === "light" || stored === "dark" || stored === "system") {
+      applyThemeMode(stored);
+      return;
+    }
+  } catch { /* noop */ }
+  updateThemeButtonLabel();
+}
+
+// Back-compat wrapper: Cmd+Shift+D + menu "Toggle Dark Mode" cycle through modes.
+function toggleDarkMode() { cycleTheme(); }
 
 async function exportPdf(state: AppState) {
   // Propose a default filename based on the open file
@@ -120,8 +159,8 @@ async function exportPdf(state: AppState) {
     const el = document.querySelector(".milkdown") as HTMLElement | null;
     if (!el) throw new Error("editor content not found");
 
-    // Re-run table sizing under the light theme in case fonts render differently
-    sizeAllTables(document);
+    // Re-run column sizing under the light theme in case fonts render differently
+    sizeAllTables();
 
     // html2pdf's TS types miss a few options we need; cast to allow them.
     const opts = {
@@ -177,12 +216,16 @@ async function init() {
   const root = document.getElementById("editor")!;
   const editor = await createEditor(root);
 
+  // Restore persisted theme choice (or show "Auto" for system default)
+  restoreThemeFromStorage();
+
   // Wire up toolbar buttons
+  document.getElementById("theme-toggle")?.addEventListener("click", cycleTheme);
   document.getElementById("font-toggle")?.addEventListener("click", toggleFont);
   document.getElementById("export-btn")?.addEventListener("click", () => exportPdf(state));
 
-  // Install the content-adaptive column sizer for all tables in the editor
-  installAutoSizer(root);
+  // Install window-resize → sizer; openFile triggers it directly on load.
+  installAutoSizer();
 
   const state: AppState = { path: null, dirty: false, editor };
   editor.onChange(async () => {
