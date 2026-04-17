@@ -2,7 +2,16 @@
   "name": "ai-md",
   "private": true,
   "version": "0.1.0",
+  "description": "ai.md — a minimal monospace markdown editor for macOS",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aaroi/ai-md.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -17,8 +26,6 @@
     "@milkdown/preset-commonmark": "^7.5.8",
     "@milkdown/preset-gfm": "^7.5.8",
     "@milkdown/prose": "^7.5.8",
-    "@milkdown/theme-nord": "^7.5.8",
-    "@milkdown/transformer": "^7.5.8",
     "@milkdown/utils": "^7.20.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",

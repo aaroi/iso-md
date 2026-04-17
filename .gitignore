@@ -1,4 +1,8 @@
+# Dependencies
 node_modules
+.pnpm-store
+
+# Build output
 dist
 dist-ssr
 *.local
@@ -7,7 +11,24 @@ dist-ssr
 src-tauri/target
 src-tauri/gen/schemas
 
-# Editor
+# Env / secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editors
 .vscode
 .idea
+*.swp
+*.swo
+
+# OS
 .DS_Store
+Thumbs.db

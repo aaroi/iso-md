@@ -1,8 +1,10 @@
 [package]
 name = "ai-md"
 version = "0.1.0"
-description = "ai.md — minimal markdown editor"
-authors = ["Aaro"]
+description = "ai.md — minimal monospace markdown editor for macOS"
+authors = ["Aaro Isosaari"]
+license = "MIT"
+repository = "https://github.com/aaroi/ai-md"
 edition = "2021"
 
 [lib]

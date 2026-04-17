@@ -1,64 +1,45 @@
 # ai.md
 
-A minimal, monospace markdown editor for macOS. Live-preview editing,
-PDF export, system-font and light/dark toggles, and it opens `.md`
-files straight from Finder.
+**A minimal monospace markdown editor for macOS.**
 
-Built with Tauri v2 + Milkdown. The shipped `.app` is about 9–10 MB.
+No cloud, no telemetry, no AI (despite the name — that's for later).
+Just a terminal-feeling WYSIWYG editor that opens `.md` files from
+Finder, exports clean PDFs, and gets out of your way.
 
-## Features
+Built on Tauri v2 + Milkdown. The shipped `.app` is ~10 MB.
 
-- **Live markdown preview** — Typora-style, powered by Milkdown +
-  CommonMark + GFM (tables, task lists, strikethrough).
-- **Grayscale, monospace UI** — no color noise, Notion-ish spacing,
-  follows the macOS system appearance by default.
-- **Content-adaptive table columns** — columns are sized in pixels from
-  each cell's natural text width; long-text columns get wider, numeric
-  columns stay tight. Small tables still expand to the width of the
-  prose column so they don't look narrower than the paragraphs around
-  them.
-- **PDF export** — toolbar button or `⌘E` opens a save dialog, picks a
-  filename and location, then writes a PDF of the rendered document.
-- **`.md` file association** — registers as an editor for
-  `net.daringfireball.markdown`, so double-clicking any `.md` in Finder
-  opens it in ai.md.
-- **Toolbar** — three small buttons in the top-right:
-  - `Auto / Light / Dark` — cycle theme; "Auto" follows the system.
-  - `Aa` — toggle between the monospace stack and the system UI font.
-  - `PDF` — export the current document.
-- **Zoom** — `⌘=` / `⌘-` / `⌘0`.
-- **Undo/redo** — `⌘Z` / `⇧⌘Z` (and `Ctrl-Z` / `Ctrl-Shift-Z`).
-- **Window** — opens full screen height, docked to the left edge of the
-  display.
+---
 
-## Install from source
+## Highlights
 
-Prerequisites on macOS:
-- [Homebrew](https://brew.sh)
-- Node 20+ (via nvm, asdf, or Homebrew)
-- Rust toolchain via rustup
+- **Live preview, Typora-style.** Markdown renders inline as you type,
+  powered by Milkdown + ProseMirror + remark (CommonMark & GFM: tables,
+  task lists, strikethrough).
+- **Monospace by default, system font one click away.** Toggle in the
+  top-right toolbar.
+- **Grayscale UI, light/dark/auto.** No blue tints, no color noise.
+  Follows macOS appearance, or pick a mode manually.
+- **Tables that actually look like tables.** Column widths adapt to the
+  content on the page — numeric columns stay tight, prose columns get
+  wider. Never narrower than the surrounding paragraphs.
+- **Real PDF export.** `⌘E` (or the toolbar button) opens a save dialog
+  — pick a name and location, get a clean PDF.
+- **Finder integration.** Double-click any `.md` file and it opens in
+  ai.md.
+- **Keyboard-first.** `⌘Z` / `⇧⌘Z` undo, `⌘=` / `⌘-` / `⌘0` zoom,
+  `⌘S` / `⌘O` save/open, `⌘⇧D` theme.
+- **Left-aligned, full-height, pinned to the left of your screen.**
+  Optimized for writing alongside something else (docs, browser,
+  Figma).
 
-```bash
-# One-time setup
-brew install rustup pnpm
-rustup default stable
-export PATH="$HOME/.cargo/bin:$PATH"
+## Quickstart — download the built app
 
-# Clone and build
-git clone https://github.com/aaroi/ai-md.git
-cd ai-md
-pnpm install
-pnpm tauri build
-
-# Install the bundle
-cp -R src-tauri/target/release/bundle/macos/ai.md.app /Applications/
-```
-
-After installing, Finder's "Open With → ai.md" will appear for `.md`
-files. To make ai.md the **default** handler system-wide:
+If you don't want to build from source, grab the latest `.app` from the
+**Releases** page (or ask the person who sent you this repo — they
+probably have a build handy), drag it to `/Applications/`, then:
 
 ```bash
-# Via Swift one-liner (no extra deps)
+# Make ai.md the default handler for .md files (optional)
 swift -e 'import Cocoa
 LSSetDefaultRoleHandlerForContentType(
   "net.daringfireball.markdown" as CFString,
@@ -67,47 +48,101 @@ LSSetDefaultRoleHandlerForContentType(
 )'
 ```
 
+## Build from source
+
+**Requires:** macOS, Node 20+, [pnpm](https://pnpm.io), and a Rust
+toolchain via rustup.
+
+```bash
+# One-time toolchain setup
+brew install rustup pnpm
+rustup default stable
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Clone + build
+git clone https://github.com/aaroi/ai-md.git
+cd ai-md
+pnpm install
+pnpm tauri build
+
+# Install to /Applications
+cp -R src-tauri/target/release/bundle/macos/ai.md.app /Applications/
+```
+
+First build takes a few minutes (Rust crate compile). Subsequent builds
+are ~30 seconds.
+
 ## Development
 
 ```bash
-pnpm tauri dev      # hot-reload dev window, DevTools attached
+pnpm tauri dev      # hot-reload dev window with DevTools attached
 pnpm build          # frontend type-check + Vite bundle
 pnpm tauri build    # full production .app
 ```
 
+The Tauri dev window auto-opens DevTools. In release builds, the
+`devtools` feature is enabled — right-click → Inspect to open the
+inspector if you need to debug.
+
 ## Project layout
 
 ```
-src/                    Frontend (TypeScript)
-├── main.ts             App bootstrap, toolbar, menu wiring, file I/O
+src/                    Frontend (TypeScript + Vite)
+├── main.ts             App bootstrap, toolbar, menu, file I/O, PDF export
 ├── editor.ts           Milkdown setup (CommonMark, GFM, history)
-├── table-sizer.ts      Content-adaptive table column widths
-├── styles.css          Grayscale theme, mono/system font, print CSS
+├── table-sizer.ts      Content-adaptive column widths (see note below)
+├── styles.css          Grayscale theme, mono/system font
 └── print.css           Print-media overrides for PDF export
 
-src-tauri/              Rust backend
-├── src/lib.rs          Menu, window sizing, file-open events
-├── tauri.conf.json     Bundle config, file associations
-└── capabilities/       Plugin permissions
+src-tauri/              Rust backend (Tauri v2)
+├── src/lib.rs          Menu, window sizing, Finder-open events
+├── tauri.conf.json     Bundle config + file association
+└── capabilities/       fs & dialog permissions
 ```
 
 ## Tech stack
 
-- **[Tauri v2](https://tauri.app)** — Rust backend + WKWebView frontend
-- **[Milkdown](https://milkdown.dev)** — ProseMirror-based WYSIWYG
-  markdown (`preset-commonmark`, `preset-gfm`, `plugin-history`,
-  `plugin-listener`)
-- **[Vite](https://vite.dev) + TypeScript** — frontend build
-- **[html2pdf.js](https://github.com/eKoopmans/html2pdf.js)** — in-webview
-  PDF rendering for the export feature
+| Layer        | What                                                  |
+|--------------|-------------------------------------------------------|
+| Shell        | [Tauri v2](https://tauri.app) (Rust + WKWebView)       |
+| Editor       | [Milkdown](https://milkdown.dev) (ProseMirror + remark) |
+| Build        | [Vite](https://vite.dev) + TypeScript                   |
+| PDF          | [html2pdf.js](https://github.com/eKoopmans/html2pdf.js) |
+| Font stack   | `ui-monospace, "SF Mono", Menlo, …`                    |
 
-## Notes
+## Permissions & security
 
-The table column sizing is a non-obvious piece: CSS `table-layout: auto`
-doesn't reliably distribute space proportionally to content in WebKit,
-and inline styles on `<td>` / `<col>` elements get orphaned when
-ProseMirror replaces table DOM on state changes. The sizer measures
-each cell's natural unwrapped text width, computes per-column pixel
-widths (clamped to `[60px, 520 + padding]`), and injects them as CSS
-rules into a `<style>` element in `<head>` — stylesheets survive PM's
-DOM churn because PM doesn't manage `<head>`.
+The app uses Tauri's fine-grained permission system:
+
+- **Filesystem** — read/write text files under `$HOME`, `$DOCUMENTS`,
+  `$DESKTOP`, `$DOWNLOADS`, and `$TEMP`. No other paths are reachable.
+  See `src-tauri/capabilities/default.json`.
+- **Dialog** — open/save/ask dialogs (native macOS sheets).
+- **No network access.** No analytics, no auto-update, no telemetry.
+
+If a teammate opens a `.md` file outside one of those directories, the
+read will fail. Adjust the scope list in `capabilities/default.json`
+if you need broader access.
+
+## Note on table column widths
+
+Getting content-adaptive columns in a ProseMirror editor is surprisingly
+hard:
+
+1. CSS `table-layout: auto` distributes space near-evenly in WebKit,
+   regardless of content length.
+2. Setting inline styles on individual `<td>` / `<col>` elements gets
+   wiped when ProseMirror replaces table DOM on state updates.
+
+The working answer is to measure each cell's natural (no-wrap) text
+width in JS, compute per-column pixel widths (clamped to
+`[60px, 520 + padding]`), and inject them as CSS rules into a
+`<style>` element in `<head>`. ProseMirror doesn't manage `<head>`, so
+the rules survive its DOM churn. Tables scale up to match the prose
+column width if their content is narrower than the text below them.
+
+The full logic lives in `src/table-sizer.ts` (about 150 lines).
+
+## License
+
+[MIT](LICENSE) © 2026 Aaro Isosaari
