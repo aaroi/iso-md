@@ -143,7 +143,7 @@ pub fn run() {
                     let logical_h = (size.height as f64) / scale;
                     const MENU_BAR: f64 = 28.0;
                     let _ = window.set_position(LogicalPosition::new(0.0, MENU_BAR));
-                    let _ = window.set_size(LogicalSize::new(680.0, logical_h - MENU_BAR));
+                    let _ = window.set_size(LogicalSize::new(800.0, logical_h - MENU_BAR));
                 }
 
             }

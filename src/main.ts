@@ -22,12 +22,53 @@ async function updateTitle(state: AppState) {
   const name = state.path ? basename(state.path) : "Untitled";
   const dot = state.dirty ? "● " : "";
   await getCurrentWindow().setTitle(`${dot}${name} — ai.md`);
+
+  // Also update the in-window titlebar element (the native title is
+  // hidden via tauri.conf's hiddenTitle: true).
+  const el = document.getElementById("filename-display");
+  if (el) {
+    el.textContent = name;
+    el.classList.toggle("dirty", state.dirty);
+  }
+}
+
+// YAML frontmatter round-trip.
+//
+// A lot of the markdown files we edit (agent skills, Hermes configs,
+// static-site posts) start with
+//   ---
+//   name: foo
+//   tags: [...]
+//   ---
+// Milkdown's commonmark parser renders the opening `---` as a <hr>
+// and then collapses the YAML body into a paragraph (single newlines
+// become spaces), which is unreadable. We preprocess on load to wrap
+// that block in a ```yaml fenced code block (preserves formatting +
+// renders as monospace), and reverse the transform on save so the
+// file on disk keeps its real frontmatter for other tools.
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+const FENCED_YAML_AT_TOP_RE = /^```ya?ml\r?\n([\s\S]*?)\r?\n```\r?\n?/;
+
+function markdownToEditorFormat(md: string): string {
+  const m = md.match(FRONTMATTER_RE);
+  if (!m) return md;
+  const yaml = m[1];
+  const rest = md.slice(m[0].length);
+  return "```yaml\n" + yaml + "\n```\n\n" + rest.replace(/^\s+/, "");
+}
+
+function editorFormatToMarkdown(md: string): string {
+  const m = md.match(FENCED_YAML_AT_TOP_RE);
+  if (!m) return md;
+  const yaml = m[1];
+  const rest = md.slice(m[0].length);
+  return "---\n" + yaml + "\n---\n\n" + rest.replace(/^\s+/, "");
 }
 
 async function openFile(state: AppState, path: string) {
   try {
     const content = await readTextFile(path);
-    await state.editor.setMarkdown(content);
+    await state.editor.setMarkdown(markdownToEditorFormat(content));
     state.path = path;
     state.dirty = false;
     await updateTitle(state);
@@ -58,7 +99,7 @@ async function saveAs(state: AppState): Promise<boolean> {
     filters: [{ name: "Markdown", extensions: ["md"] }],
   });
   if (!path) return false;
-  await writeTextFile(path, state.editor.getMarkdown());
+  await writeTextFile(path, editorFormatToMarkdown(state.editor.getMarkdown()));
   state.path = path;
   state.dirty = false;
   await updateTitle(state);
@@ -67,7 +108,7 @@ async function saveAs(state: AppState): Promise<boolean> {
 
 async function save(state: AppState): Promise<boolean> {
   if (!state.path) return saveAs(state);
-  await writeTextFile(state.path, state.editor.getMarkdown());
+  await writeTextFile(state.path, editorFormatToMarkdown(state.editor.getMarkdown()));
   state.dirty = false;
   await updateTitle(state);
   return true;

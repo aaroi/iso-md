@@ -99,7 +99,31 @@ function computeTableWidths(table: HTMLTableElement): number[] | null {
  * Size all tables in the editor by injecting CSS rules into <head>.
  * Stylesheets survive ProseMirror DOM replacements, so widths stay.
  */
+/**
+ * Ensure each table is inside a `.table-scroll-wrap` <div> so wide
+ * tables get their own horizontal scrollbar instead of making the
+ * whole page scroll. ProseMirror's tableView doesn't create a
+ * wrapper on its own in this stack, so we add one.
+ */
+function wrapAllTables(): void {
+  const tables = document.querySelectorAll(".milkdown table, .ProseMirror table");
+  tables.forEach(t => {
+    const table = t as HTMLTableElement;
+    const parent = table.parentElement;
+    if (!parent || parent.classList.contains("table-scroll-wrap")) return;
+    const wrap = document.createElement("div");
+    wrap.className = "table-scroll-wrap";
+    parent.insertBefore(wrap, table);
+    wrap.appendChild(table);
+  });
+}
+
 export function sizeAllTables(): void {
+  // Wrap first so column-width measurements happen inside the scroll
+  // container (layout-wise they're equivalent, but this order keeps
+  // DOM state consistent).
+  wrapAllTables();
+
   const tables = Array.from(
     document.querySelectorAll(".milkdown table, .ProseMirror table")
   ) as HTMLTableElement[];
