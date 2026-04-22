@@ -271,19 +271,34 @@ html.font-system body {
    via a <style> element (PM can't strip stylesheets). Table uses
    width: max-content so its total width = sum of column widths;
    max-width caps the total at the viewport. */
-/* Table scroll wrapper: injected by table-sizer.ts around each table
-   so wide tables scroll horizontally *within their own container*
-   instead of making the entire page scroll.
-   The wrapper is left-aligned and allowed to break out of the
-   .milkdown content column so wide tables can use most of the window
-   width before they start scrolling. */
-.table-scroll-wrap {
+/* Table scroll wrapper. The .tableWrapper div is part of prosemirror-
+   tables' TableView NodeView (registered in editor.ts) — ProseMirror
+   owns it, so it isn't wiped on re-renders the way a JS-inserted
+   wrapper would be. Wide tables scroll horizontally within this
+   wrapper instead of making the whole page scroll.
+
+   The wrapper's OUTER box spans the entire viewport (viewport-left
+   to viewport-right), but a padding-left equal to (100vw - .milkdown-
+   width)/2 pushes the inner content so that by default the table
+   starts aligned with paragraph-left. This means:
+     - narrow tables sit aligned with surrounding prose
+     - wide tables can scroll within the 100vw outer box, using the
+       whole window width without being cropped by an inner edge
+   Negative margin-left shifts the outer box from .milkdown's left
+   edge back to the viewport's left edge. */
+.milkdown .tableWrapper,
+.ProseMirror .tableWrapper {
   overflow-x: auto;
   overflow-y: hidden;
-  margin: 1.6em 0;
-  margin-left: 0;
-  width: calc(100vw - 2 * var(--content-pad-x));
-  max-width: calc(100vw - 2 * var(--content-pad-x));
+  margin-top: 1.6em;
+  margin-bottom: 1.6em;
+  margin-right: 0;
+  margin-left: calc((100% - 100vw) / 2);
+  width: 100vw;
+  max-width: 100vw;
+  padding-left: calc((100vw - 100%) / 2);
+  padding-right: 0;
+  box-sizing: border-box;
 }
 
 .milkdown table,

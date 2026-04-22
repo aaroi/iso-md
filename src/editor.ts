@@ -14,7 +14,9 @@ import { listener, listenerCtx } from "@milkdown/plugin-listener";
 import { getMarkdown } from "@milkdown/utils";
 import { keymap } from "@milkdown/prose/keymap";
 import { undo, redo } from "@milkdown/prose/history";
+import { TableView } from "@milkdown/prose/tables";
 import type { Slice } from "@milkdown/prose/model";
+import type { Node as PmNode } from "@milkdown/prose/model";
 
 // ProseMirror base CSS is inlined into styles.css to keep full control of table layout
 
@@ -38,6 +40,15 @@ export async function createEditor(root: HTMLElement): Promise<EditorHandle> {
         ctx.update(editorViewOptionsCtx, (prev) => ({
           ...prev,
           attributes: { spellcheck: "true", class: "milkdown" },
+          // Register prosemirror-tables' TableView as the table node's
+          // NodeView. It renders the table wrapped in <div class="tableWrapper">
+          // — that wrapper is part of the node's own DOM, so ProseMirror
+          // won't strip it the way it does a div we inject after render.
+          // We apply overflow-x: auto to .tableWrapper in styles.css.
+          nodeViews: {
+            ...(prev.nodeViews || {}),
+            table: (node: PmNode) => new TableView(node, 25),
+          },
           // When the user copies text, put MARKDOWN source on the clipboard
           // (not just stripped plain text). ProseMirror's default
           // clipboardTextSerializer uses `slice.content.textBetween(...)`

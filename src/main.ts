@@ -72,12 +72,15 @@ async function openFile(state: AppState, path: string) {
     state.path = path;
     state.dirty = false;
     await updateTitle(state);
-    // Size columns after the file's tables render. Widths get injected
-    // as CSS rules into <head>, so they survive PM's DOM replacements.
+    // Size columns after the file's tables render. We pass getCtx so
+    // the sizer can write widths into ProseMirror's state via the
+    // colwidth cell attribute — prosemirror-tables' TableView renders
+    // those widths reliably on every update.
+    const getCtx = () => state.editor.getCtx();
     requestAnimationFrame(() => {
-      sizeAllTables();
-      setTimeout(sizeAllTables, 120);
-      setTimeout(sizeAllTables, 400);
+      sizeAllTables(getCtx);
+      setTimeout(() => sizeAllTables(getCtx), 120);
+      setTimeout(() => sizeAllTables(getCtx), 400);
     });
   } catch (err) {
     console.error("Failed to open file:", err);
@@ -201,7 +204,7 @@ async function exportPdf(state: AppState) {
     if (!el) throw new Error("editor content not found");
 
     // Re-run column sizing under the light theme in case fonts render differently
-    sizeAllTables();
+    sizeAllTables(() => state.editor.getCtx());
 
     // html2pdf's TS types miss a few options we need; cast to allow them.
     const opts = {
@@ -266,7 +269,7 @@ async function init() {
   document.getElementById("export-btn")?.addEventListener("click", () => exportPdf(state));
 
   // Install window-resize → sizer; openFile triggers it directly on load.
-  installAutoSizer();
+  installAutoSizer(() => state.editor.getCtx());
 
   const state: AppState = { path: null, dirty: false, editor };
   editor.onChange(async () => {

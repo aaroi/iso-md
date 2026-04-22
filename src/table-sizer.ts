@@ -102,70 +102,97 @@ function computeTableWidths(table: HTMLTableElement): number[] | null {
 /**
  * Ensure each table is inside a `.table-scroll-wrap` <div> so wide
  * tables get their own horizontal scrollbar instead of making the
- * whole page scroll. ProseMirror's tableView doesn't create a
- * wrapper on its own in this stack, so we add one.
+ * whole page scroll.
  */
-function wrapAllTables(): void {
-  const tables = document.querySelectorAll(".milkdown table, .ProseMirror table");
-  tables.forEach(t => {
-    const table = t as HTMLTableElement;
-    const parent = table.parentElement;
-    if (!parent || parent.classList.contains("table-scroll-wrap")) return;
-    const wrap = document.createElement("div");
-    wrap.className = "table-scroll-wrap";
-    parent.insertBefore(wrap, table);
-    wrap.appendChild(table);
+import { editorViewCtx } from "@milkdown/core";
+import type { Ctx } from "@milkdown/ctx";
+import type { EditorView } from "@milkdown/prose/view";
+
+/**
+ * Apply computed widths via ProseMirror's `colwidth` cell attribute.
+ *
+ * prosemirror-tables' TableView.updateColumns() actively manages <col>
+ * widths on every node update — it reads each cell's colwidth attr
+ * from the PM doc and writes the corresponding style.width onto the
+ * <col>. If colwidth is absent it writes style.width = "", wiping
+ * anything we set from outside. So the only stable way to size
+ * columns is to put the widths IN the PM doc. Then PM renders them.
+ */
+function applyWidthsViaPmAttrs(view: EditorView): boolean {
+  let tr = view.state.tr;
+  let dirty = false;
+
+  view.state.doc.descendants((node, pos) => {
+    if (node.type.name !== "table") return true;
+
+    // Measure the DOM table to get per-column target widths.
+    const dom = view.nodeDOM(pos) as HTMLElement | null;
+    const domTable = dom?.tagName === "TABLE"
+      ? (dom as HTMLTableElement)
+      : (dom?.querySelector("table") as HTMLTableElement | null);
+    if (!domTable) return false;
+
+    const widths = computeTableWidths(domTable);
+    if (!widths) return false;
+
+    // Set colwidth on each cell in the first row. `rowPos` points
+    // inside the table (after its opening token). `cellPos` points
+    // inside the row.
+    const firstRow = node.firstChild;
+    if (!firstRow) return false;
+    const rowPos = pos + 1;
+    firstRow.forEach((cell, cellOffset, cellIdx) => {
+      if (cellIdx >= widths.length) return;
+      const target = widths[cellIdx];
+      const current = cell.attrs.colwidth as number[] | null;
+      if (!current || current[0] !== target || current.length !== 1) {
+        const cellPos = rowPos + 1 + cellOffset;
+        tr = tr.setNodeMarkup(cellPos, undefined, {
+          ...cell.attrs,
+          colwidth: [target],
+        });
+        dirty = true;
+      }
+    });
+
+    return false; // don't descend into the table
   });
+
+  if (dirty) {
+    tr.setMeta("addToHistory", false);
+    view.dispatch(tr);
+  }
+  return dirty;
 }
 
-export function sizeAllTables(): void {
-  // Wrap first so column-width measurements happen inside the scroll
-  // container (layout-wise they're equivalent, but this order keeps
-  // DOM state consistent).
-  wrapAllTables();
-
-  const tables = Array.from(
-    document.querySelectorAll(".milkdown table, .ProseMirror table")
-  ) as HTMLTableElement[];
-  if (!tables.length) return;
-
-  const rules: string[] = [];
-  tables.forEach((table, tableIdx) => {
-    const widths = computeTableWidths(table);
-    if (!widths) return;
-    widths.forEach((w, colIdx) => {
-      // Pixel width + min-width. The min-width keeps columns from being
-      // crushed if the browser tries to fit the table into a narrower
-      // box; width is the target the browser respects when space allows.
-      rules.push(
-        `.milkdown table:nth-of-type(${tableIdx + 1}) tr:first-child > *:nth-child(${colIdx + 1}),`
-        + `\n.ProseMirror table:nth-of-type(${tableIdx + 1}) tr:first-child > *:nth-child(${colIdx + 1}) `
-        + `{ width: ${w}px !important; min-width: ${w}px !important; }`
-      );
-    });
-  });
-
-  let styleEl = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
-  if (!styleEl) {
-    styleEl = document.createElement("style");
-    styleEl.id = STYLE_ID;
-    document.head.appendChild(styleEl);
+export function sizeAllTables(getCtx?: () => Ctx | null): void {
+  if (!getCtx) return;
+  try {
+    const ctx = getCtx();
+    if (!ctx) return;
+    const view = ctx.get(editorViewCtx) as EditorView;
+    applyWidthsViaPmAttrs(view);
+  } catch (err) {
+    console.error("sizeAllTables failed:", err);
   }
-  styleEl.textContent = rules.join("\n");
+
+  // Clear any leftover stylesheet rules from the previous approach.
+  const staleStyle = document.getElementById(STYLE_ID);
+  if (staleStyle) staleStyle.textContent = "";
 }
 
 /**
- * Install a sizer triggered on window resize; sizeAllTables is meant
- * to be called explicitly after the editor content changes (since
- * MutationObserver was creating feedback loops).
+ * Install a sizer that re-runs on window resize. `getCtx` must
+ * return the current editor's Milkdown ctx so the sizer can reach
+ * the PM view.
  */
-export function installAutoSizer(): () => void {
+export function installAutoSizer(getCtx: () => Ctx | null): () => void {
   let pending = 0;
   const schedule = () => {
     if (pending) cancelAnimationFrame(pending);
     pending = requestAnimationFrame(() => {
       pending = 0;
-      sizeAllTables();
+      sizeAllTables(getCtx);
     });
   };
 
