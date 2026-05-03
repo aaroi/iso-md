@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="ai-md.png" width="160" alt="ai.md icon" />
+</p>
+
 # ai.md
 
 **A minimal monospace markdown editor for macOS.**
