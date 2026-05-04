@@ -19,7 +19,7 @@ fn frontend_ready(state: State<PendingFiles>) -> Vec<String> {
 
 fn build_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     // App submenu (macOS) — about, services, hide, quit
-    let app_menu = SubmenuBuilder::new(app, "ai.md")
+    let app_menu = SubmenuBuilder::new(app, "iso.md")
         .about(None)
         .separator()
         .services()
@@ -151,7 +151,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building ai.md");
+        .expect("error while building iso.md");
 
     app.run(|handle, event| {
         if let RunEvent::Opened { urls } = event {

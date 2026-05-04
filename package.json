@@ -1,13 +1,13 @@
 {
-  "name": "ai-md",
+  "name": "iso-md",
   "private": true,
   "version": "0.1.0",
-  "description": "ai.md — a minimal monospace markdown editor for macOS",
+  "description": "iso.md — a minimal monospace markdown editor for macOS",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aaroi/ai-md.git"
+    "url": "https://github.com/aaroi/iso-md.git"
   },
   "engines": {
     "node": ">=20"

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="ai-md.png" width="160" alt="ai.md icon" />
+  <img src="iso-md.png" width="160" alt="iso.md icon" />
 </p>
 
-# ai.md
+# iso.md
 
 **A minimal monospace markdown editor for macOS.**
 
@@ -29,7 +29,7 @@ Built on Tauri v2 + Milkdown. The shipped `.app` is ~10 MB.
 - **Real PDF export.** `⌘E` (or the toolbar button) opens a save dialog
   — pick a name and location, get a clean PDF.
 - **Finder integration.** Double-click any `.md` file and it opens in
-  ai.md.
+  iso.md.
 - **Keyboard-first.** `⌘Z` / `⇧⌘Z` undo, `⌘=` / `⌘-` / `⌘0` zoom,
   `⌘S` / `⌘O` save/open, `⌘⇧D` theme.
 - **Left-aligned, full-height, pinned to the left of your screen.**
@@ -43,12 +43,12 @@ If you don't want to build from source, grab the latest `.app` from the
 probably have a build handy), drag it to `/Applications/`, then:
 
 ```bash
-# Make ai.md the default handler for .md files (optional)
+# Make iso.md the default handler for .md files (optional)
 swift -e 'import Cocoa
 LSSetDefaultRoleHandlerForContentType(
   "net.daringfireball.markdown" as CFString,
   .all,
-  "com.aaro.aimd" as CFString
+  "com.aaro.isomd" as CFString
 )'
 ```
 
@@ -64,13 +64,13 @@ rustup default stable
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # Clone + build
-git clone https://github.com/aaroi/ai-md.git
-cd ai-md
+git clone https://github.com/aaroi/iso-md.git
+cd iso-md
 pnpm install
 pnpm tauri build
 
 # Install to /Applications
-cp -R src-tauri/target/release/bundle/macos/ai.md.app /Applications/
+cp -R src-tauri/target/release/bundle/macos/iso.md.app /Applications/
 ```
 
 First build takes a few minutes (Rust crate compile). Subsequent builds

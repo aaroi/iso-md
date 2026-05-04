@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ai.md",
+  "productName": "iso.md",
   "version": "0.1.0",
-  "identifier": "com.aaro.aimd",
+  "identifier": "com.aaro.isomd",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "ai.md",
+        "title": "iso.md",
         "width": 800,
         "height": 1000,
         "x": 0,
@@ -40,7 +40,7 @@
     ],
     "category": "public.app-category.productivity",
     "shortDescription": "Minimal markdown editor",
-    "longDescription": "ai.md — a clean, minimal markdown editor with live preview and PDF export.",
+    "longDescription": "iso.md — a clean, minimal markdown editor with live preview and PDF export.",
     "fileAssociations": [
       {
         "ext": ["md", "markdown"],

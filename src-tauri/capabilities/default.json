@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for ai.md",
+  "description": "Default capabilities for iso.md",
   "windows": ["main"],
   "permissions": [
     "core:default",

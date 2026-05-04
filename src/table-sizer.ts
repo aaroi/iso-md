@@ -13,7 +13,7 @@
  *   3. If the natural total is narrower than the prose column's
  *      --content-max, scale columns up proportionally so the table
  *      isn't visually narrower than surrounding paragraphs
- *   4. Emit pixel-width CSS rules into <style id="ai-md-table-widths">
+ *   4. Emit pixel-width CSS rules into <style id="iso-md-table-widths">
  *   5. The core table CSS (table-layout: fixed, width: max-content,
  *      left-aligned) lives in the main stylesheet
  */
@@ -25,7 +25,7 @@ const MIN_COL_PX = 60;
 const CAP_PX = 520;
 const CELL_PADDING_PX = 16;
 
-const STYLE_ID = "ai-md-table-widths";
+const STYLE_ID = "iso-md-table-widths";
 
 function measureCellWidth(cell: HTMLElement): number {
   const text = (cell.textContent || "").trim();

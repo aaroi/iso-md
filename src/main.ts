@@ -21,7 +21,7 @@ function basename(path: string): string {
 async function updateTitle(state: AppState) {
   const name = state.path ? basename(state.path) : "Untitled";
   const dot = state.dirty ? "● " : "";
-  await getCurrentWindow().setTitle(`${dot}${name} — ai.md`);
+  await getCurrentWindow().setTitle(`${dot}${name} — iso.md`);
 
   // Also update the in-window titlebar element (the native title is
   // hidden via tauri.conf's hiddenTitle: true).
@@ -84,7 +84,7 @@ async function openFile(state: AppState, path: string) {
     });
   } catch (err) {
     console.error("Failed to open file:", err);
-    await ask(`Could not open file:\n${err}`, { title: "ai.md", kind: "error" });
+    await ask(`Could not open file:\n${err}`, { title: "iso.md", kind: "error" });
   }
 }
 
@@ -120,7 +120,7 @@ async function save(state: AppState): Promise<boolean> {
 async function newFile(state: AppState) {
   if (state.dirty) {
     const keep = await ask("You have unsaved changes. Discard?", {
-      title: "ai.md",
+      title: "iso.md",
       kind: "warning",
     });
     if (!keep) return;
@@ -148,7 +148,7 @@ function applyThemeMode(mode: ThemeMode) {
   else if (mode === "dark") html.classList.add("dark");
   // "system" = no class, CSS @media (prefers-color-scheme) takes over.
   updateThemeButtonLabel();
-  try { localStorage.setItem("ai.md.theme", mode); } catch { /* noop */ }
+  try { localStorage.setItem("iso.md.theme", mode); } catch { /* noop */ }
 }
 
 function updateThemeButtonLabel() {
@@ -167,7 +167,7 @@ function cycleTheme() {
 
 function restoreThemeFromStorage() {
   try {
-    const stored = localStorage.getItem("ai.md.theme") as ThemeMode | null;
+    const stored = localStorage.getItem("iso.md.theme") as ThemeMode | null;
     if (stored === "light" || stored === "dark" || stored === "system") {
       applyThemeMode(stored);
       return;
@@ -224,7 +224,7 @@ async function exportPdf(state: AppState) {
     await writeFile(target, bytes);
   } catch (err) {
     console.error("export PDF failed:", err);
-    await ask(`PDF export failed: ${err}`, { title: "ai.md", kind: "error" });
+    await ask(`PDF export failed: ${err}`, { title: "iso.md", kind: "error" });
   } finally {
     // Restore theme
     html.classList.remove("light");
@@ -316,7 +316,7 @@ async function init() {
   await win.onCloseRequested(async (event) => {
     if (state.dirty) {
       const discard = await ask("You have unsaved changes. Close without saving?", {
-        title: "ai.md",
+        title: "iso.md",
         kind: "warning",
       });
       if (!discard) event.preventDefault();
