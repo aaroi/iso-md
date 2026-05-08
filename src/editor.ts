@@ -26,6 +26,8 @@ export interface EditorHandle {
   onChange(cb: (md: string) => void): void;
   /** Access the current editor's Milkdown ctx (null before first create). */
   getCtx(): import("@milkdown/ctx").Ctx | null;
+  /** Move keyboard focus into the editor's contenteditable area. */
+  focus(): void;
 }
 
 export async function createEditor(root: HTMLElement): Promise<EditorHandle> {
@@ -122,6 +124,18 @@ export async function createEditor(root: HTMLElement): Promise<EditorHandle> {
       let ctx: import("@milkdown/ctx").Ctx | null = null;
       currentEditor.action((c) => { ctx = c; });
       return ctx;
+    },
+    focus() {
+      // The actual contenteditable element ProseMirror injects lives inside
+      // the .milkdown wrapper and carries the `.ProseMirror` class. After
+      // a destroy+rebuild the DOM may not be in place for the current
+      // microtask, so defer one frame before focusing.
+      requestAnimationFrame(() => {
+        const el =
+          (root.querySelector(".ProseMirror") as HTMLElement | null) ??
+          (root.querySelector(".milkdown") as HTMLElement | null);
+        el?.focus();
+      });
     },
   };
 }

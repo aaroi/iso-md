@@ -5,14 +5,20 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "opener:default",
     "core:window:default",
     "core:window:allow-set-title",
     "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-is-maximized",
     "core:event:default",
     "dialog:default",
     "fs:default",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
+    "fs:allow-write-file",
     {
       "identifier": "fs:scope",
       "allow": [

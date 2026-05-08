@@ -84,7 +84,12 @@ html.font-system body {
 ::selection { background: var(--selection); }
 
 #editor {
-  min-height: 100vh;
+  /* Start below the 32px titlebar so the editor's contenteditable does not
+     physically overlap the drag region. WebKit's -webkit-app-region hit
+     testing doesn't reliably respect z-index when a contenteditable
+     element is underneath, so we keep them in separate spatial bands. */
+  margin-top: 32px;
+  min-height: calc(100vh - 32px);
   width: 100%;
   padding: var(--content-pad-y) var(--content-pad-x);
   display: flex;
@@ -383,7 +388,10 @@ html.font-system body {
   right: 0;
   height: 32px;
   -webkit-app-region: drag;
-  z-index: 10;
+  /* Must be above #editor (which sits at top:0 with min-height:100vh and
+     covers the whole window) so WebKit's drag hit-testing finds the
+     titlebar's drag region instead of the editor underneath. */
+  z-index: 100;
   user-select: none;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
@@ -398,7 +406,13 @@ html.font-system body {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  max-width: calc(100% - 260px);
+  /* Reserve space on both sides of the centered filename: traffic lights
+     on the left (~78px + buffer) and the toolbar icons on the right
+     (~130px + buffer). Since the text is centered, we reserve 2× the
+     larger obstacle so the filename stays clear of both. On wide windows
+     this lets long names breathe; truncation kicks in only when the text
+     would actually start touching the toolbar. */
+  max-width: calc(100% - 320px);
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--fg-muted);
@@ -407,7 +421,9 @@ html.font-system body {
   overflow: hidden;
   text-overflow: ellipsis;
   -webkit-app-region: drag;
-  pointer-events: none;
+  /* Don't block pointer events: WebKit's drag hit-test needs the
+     filename element to be hittable for the drag region to apply
+     where the filename visually covers the titlebar. */
 }
 
 /* Always reserve space for the dirty dot so the filename never shifts
@@ -421,47 +437,261 @@ html.font-system body {
   visibility: visible;
 }
 
-/* Floating toolbar — top right, minimal text buttons.
-   Full titlebar height with centered alignment so the vertical margins
-   around the buttons are symmetric (instead of squashed at the bottom). */
+/* Floating toolbar — top right, icon-only buttons.
+   The container is marked draggable so the empty gaps between buttons
+   still move the window; only the buttons themselves opt out of drag. */
 .toolbar {
   position: fixed;
   top: 0;
-  right: 14px;
+  right: 10px;
   height: 32px;
-  z-index: 50;
+  /* Above the titlebar (z-index 100) so the icon buttons receive clicks
+     rather than being absorbed by the drag layer underneath. */
+  z-index: 200;
   display: flex;
   align-items: center;
-  gap: 6px;
-  -webkit-app-region: no-drag;
+  gap: 2px;
+  -webkit-app-region: drag;
 }
 
 .toolbar button {
   -webkit-app-region: no-drag;
   appearance: none;
   background: transparent;
-  border: 1px solid var(--border);
+  border: none;
   color: var(--fg-muted);
-  padding: 2px 8px;
-  font-size: 10px;
-  font-family: var(--font-mono);
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  border-radius: 3px;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
   cursor: pointer;
-  line-height: 1.4;
-  transition: color 120ms ease, border-color 120ms ease;
+  transition: color 120ms ease, background 120ms ease;
 }
 
 .toolbar button:hover {
-  border-color: var(--border-strong);
   color: var(--fg);
-}
-
-.toolbar button:active {
   background: var(--code-bg);
 }
 
-/* Font toggle button reflects the current font mode in its own label */
-#font-toggle { font-family: var(--font-body); }
+.toolbar button:active {
+  background: var(--border);
+}
+
+.toolbar button svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+/* Theme menu — hover-triggered dropdown of three icon options
+   (Auto / Light / Dark). The trigger button shows the icon of the
+   currently-active mode; the dropdown reveals all three when the
+   user hovers the menu region. */
+.theme-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+
+/* Only one of the three trigger icons is visible at a time,
+   corresponding to the current theme mode on <html>. Selectors are
+   namespaced under .toolbar so they beat `.toolbar button svg { display: block }`. */
+.toolbar .theme-icon { display: none; }
+:root:not(.light):not(.dark) .toolbar .theme-icon-system { display: block; }
+:root.light .toolbar .theme-icon-light { display: block; }
+:root.dark .toolbar .theme-icon-dark { display: block; }
+
+.theme-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  /* Visual gap between the trigger and the dropdown, bridged by
+     padding-top so hover doesn't break when the pointer crosses. */
+  margin-top: 0;
+  padding-top: 4px;
+  display: none;
+  flex-direction: row;
+  gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  -webkit-app-region: no-drag;
+  z-index: 300;
+}
+
+.theme-menu:hover .theme-menu-dropdown,
+.theme-menu:focus-within .theme-menu-dropdown {
+  display: flex;
+}
+
+.theme-menu-dropdown button {
+  width: 22px;
+  height: 22px;
+}
+
+.theme-menu-dropdown button svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Highlight the option matching the current mode. */
+:root:not(.light):not(.dark) .theme-menu-dropdown button[data-theme="system"],
+:root.light .theme-menu-dropdown button[data-theme="light"],
+:root.dark .theme-menu-dropdown button[data-theme="dark"] {
+  color: var(--fg);
+  background: var(--code-bg);
+}
+
+/* Welcome overlay — shown on cold launch with no file. Sits below the
+   32px titlebar and covers the editor until the user creates or opens
+   a file. */
+.welcome {
+  position: fixed;
+  top: 32px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.welcome[hidden] { display: none; }
+
+.welcome-card {
+  text-align: center;
+  max-width: 360px;
+}
+
+.welcome-card h1 {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  margin: 0 0 6px;
+  color: var(--fg);
+}
+
+.welcome-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-muted);
+  margin: 0 0 28px;
+}
+
+.welcome-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.welcome-actions button {
+  -webkit-app-region: no-drag;
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--fg);
+  padding: 8px 16px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.welcome-actions button:hover {
+  background: var(--code-bg);
+}
+
+.welcome-actions button:active {
+  background: var(--border);
+}
+
+.welcome-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-muted);
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------
+   PDF export mode. html2pdf (html2canvas → jsPDF) does NOT honor
+   @media print, so we apply print-like styles via a plain class that
+   main.ts toggles on <body> during export. Goals:
+   - Content fills the full canvas width (no wasted margin on the right
+     after jsPDF fits the image to the page).
+   - UI chrome (titlebar/toolbar/welcome) is removed from the snapshot.
+   - Block elements get break-inside/page-break-inside: avoid so the
+     slicer respects them instead of cutting lines in half.
+   ------------------------------------------------------------------ */
+body.exporting {
+  background: #ffffff !important;
+  color: #000000 !important;
+}
+body.exporting .titlebar,
+body.exporting .toolbar,
+body.exporting .welcome {
+  display: none !important;
+}
+body.exporting #editor {
+  padding: 0 !important;
+  margin-top: 0 !important;
+  display: block !important;
+}
+body.exporting .milkdown {
+  max-width: none !important;
+  width: 100% !important;
+  color: #000 !important;
+}
+body.exporting .milkdown a { color: #000 !important; text-decoration: underline; }
+body.exporting .milkdown pre,
+body.exporting .milkdown code {
+  background: #f4f4f4 !important;
+  color: #000 !important;
+  border-color: #ccc !important;
+}
+body.exporting .milkdown .tableWrapper {
+  border-color: #ccc !important;
+  overflow: visible !important;
+}
+body.exporting .milkdown th,
+body.exporting .milkdown td {
+  border-color: #ccc !important;
+  color: #000 !important;
+}
+body.exporting .milkdown th { background: #f4f4f4 !important; }
+body.exporting .milkdown p,
+body.exporting .milkdown li,
+body.exporting .milkdown pre,
+body.exporting .milkdown blockquote,
+body.exporting .milkdown table,
+body.exporting .milkdown h1,
+body.exporting .milkdown h2,
+body.exporting .milkdown h3,
+body.exporting .milkdown h4,
+body.exporting .milkdown h5,
+body.exporting .milkdown h6 {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+body.exporting .milkdown h1,
+body.exporting .milkdown h2,
+body.exporting .milkdown h3 {
+  page-break-after: avoid;
+  break-after: avoid;
+}
 
