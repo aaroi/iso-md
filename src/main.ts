@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { readTextFile, writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import { open as openDialog, save as saveDialog, ask } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import html2pdf from "html2pdf.js";
 import { createEditor, type EditorHandle } from "./editor";
 import { installAutoSizer, sizeAllTables } from "./table-sizer";
@@ -65,13 +66,20 @@ function editorFormatToMarkdown(md: string): string {
   return "---\n" + yaml + "\n---\n\n" + rest.replace(/^\s+/, "");
 }
 
+function setWelcomeVisible(visible: boolean) {
+  const el = document.getElementById("welcome");
+  if (el) el.hidden = !visible;
+}
+
 async function openFile(state: AppState, path: string) {
   try {
     const content = await readTextFile(path);
     await state.editor.setMarkdown(markdownToEditorFormat(content));
     state.path = path;
     state.dirty = false;
+    setWelcomeVisible(false);
     await updateTitle(state);
+    state.editor.focus();
     // Size columns after the file's tables render. We pass getCtx so
     // the sizer can write widths into ProseMirror's state via the
     // colwidth cell attribute — prosemirror-tables' TableView renders
@@ -128,7 +136,9 @@ async function newFile(state: AppState) {
   await state.editor.setMarkdown("");
   state.path = null;
   state.dirty = false;
+  setWelcomeVisible(false);
   await updateTitle(state);
+  state.editor.focus();
 }
 
 // Theme: three modes — "system" (follow prefers-color-scheme), "light", "dark".
@@ -152,10 +162,14 @@ function applyThemeMode(mode: ThemeMode) {
 }
 
 function updateThemeButtonLabel() {
+  // The mode is reflected on <html> via the class; the button keeps its
+  // SVG icon. We only refresh the title tooltip so it shows the current
+  // mode when hovered.
   const btn = document.getElementById("theme-toggle");
   if (!btn) return;
   const mode = getThemeMode();
-  btn.textContent = mode === "system" ? "Auto" : mode === "light" ? "Light" : "Dark";
+  const name = mode === "system" ? "Auto" : mode === "light" ? "Light" : "Dark";
+  btn.setAttribute("title", `Theme: ${name}`);
 }
 
 function cycleTheme() {
@@ -199,24 +213,102 @@ async function exportPdf(state: AppState) {
   html.classList.remove("dark");
   html.classList.add("light");
 
+  // Apply export-mode styles: full-width content, hidden chrome,
+  // page-break-inside: avoid on blocks. See styles.css `body.exporting`.
+  document.body.classList.add("exporting");
+
+  // Belt-and-braces: set an explicit inline width on .milkdown and its
+  // parent so there is zero chance of the 540px --content-max sneaking
+  // through via specificity or html2canvas clone quirks. We target A4
+  // content area at 96dpi (210mm - 28mm margins ≈ 688px).
+  const editorEl = document.getElementById("editor");
+  const milkdownEl = document.querySelector(".milkdown") as HTMLElement | null;
+  const saved = {
+    editorWidth: editorEl?.style.width ?? "",
+    editorMax: editorEl?.style.maxWidth ?? "",
+    editorPad: editorEl?.style.padding ?? "",
+    editorDisplay: editorEl?.style.display ?? "",
+    mdWidth: milkdownEl?.style.width ?? "",
+    mdMax: milkdownEl?.style.maxWidth ?? "",
+  };
+  const PRINT_CONTENT_PX = 688;
+  if (editorEl) {
+    editorEl.style.width = `${PRINT_CONTENT_PX}px`;
+    editorEl.style.maxWidth = `${PRINT_CONTENT_PX}px`;
+    editorEl.style.padding = "0";
+    editorEl.style.display = "block";
+  }
+  if (milkdownEl) {
+    milkdownEl.style.width = `${PRINT_CONTENT_PX}px`;
+    milkdownEl.style.maxWidth = `${PRINT_CONTENT_PX}px`;
+  }
+
   try {
-    const el = document.querySelector(".milkdown") as HTMLElement | null;
-    if (!el) throw new Error("editor content not found");
+    if (!milkdownEl) throw new Error("editor content not found");
 
     // Re-run column sizing under the light theme in case fonts render differently
     sizeAllTables(() => state.editor.getCtx());
+
+    // Give the browser a frame to apply the new layout before snapshotting.
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+
+    // Match the canvas window to the element width so html2canvas doesn't
+    // capture extra whitespace from the surrounding (wider) viewport.
+    const renderWidth = PRINT_CONTENT_PX;
 
     // html2pdf's TS types miss a few options we need; cast to allow them.
     const opts = {
       margin: [14, 14, 14, 14],                             // mm
       image: { type: "jpeg", quality: 0.95 },
-      html2canvas: { scale: 2, backgroundColor: "#ffffff", useCORS: true },
+      html2canvas: {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        windowWidth: renderWidth,
+        width: renderWidth,
+        // Mutate the cloned document right before rendering. This is
+        // the only way to guarantee the .milkdown max-width constraint
+        // is gone — inline styles on the live DOM don't always survive
+        // the html2canvas clone step in a predictable order.
+        onclone: (doc: Document) => {
+          const body = doc.body;
+          const editor = doc.getElementById("editor");
+          const md = doc.querySelector(".milkdown") as HTMLElement | null;
+          if (body) {
+            body.style.width = `${renderWidth}px`;
+            body.style.margin = "0";
+            body.style.padding = "0";
+            body.style.background = "#ffffff";
+          }
+          if (editor) {
+            editor.style.width = `${renderWidth}px`;
+            editor.style.maxWidth = `${renderWidth}px`;
+            editor.style.padding = "0";
+            editor.style.margin = "0";
+            editor.style.display = "block";
+          }
+          if (md) {
+            md.style.width = `${renderWidth}px`;
+            md.style.maxWidth = `${renderWidth}px`;
+            md.style.margin = "0";
+            md.style.padding = "0";
+          }
+          // Hide UI chrome in the clone just in case body.exporting didn't apply.
+          doc.querySelectorAll<HTMLElement>(".titlebar, .toolbar, .welcome")
+            .forEach((n) => { n.style.display = "none"; });
+        },
+      },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      pagebreak: { mode: ["css", "legacy"] },
+      // `avoid-all` tries not to split block elements across pages,
+      // combined with break-inside: avoid in CSS this stops mid-line cuts.
+      pagebreak: { mode: ["avoid-all", "css", "legacy"] },
     } as any;
 
+    // Render the whole body so the canvas is exactly renderWidth wide.
+    // Passing .milkdown alone can produce a narrower canvas when layout
+    // state (flex parent, margin:auto, etc.) isn't fully honored.
     const blob = (await html2pdf()
-      .from(el)
+      .from(document.body)
       .set(opts)
       .outputPdf("blob")) as Blob;
 
@@ -226,7 +318,19 @@ async function exportPdf(state: AppState) {
     console.error("export PDF failed:", err);
     await ask(`PDF export failed: ${err}`, { title: "iso.md", kind: "error" });
   } finally {
-    // Restore theme
+    // Restore inline styles
+    if (editorEl) {
+      editorEl.style.width = saved.editorWidth;
+      editorEl.style.maxWidth = saved.editorMax;
+      editorEl.style.padding = saved.editorPad;
+      editorEl.style.display = saved.editorDisplay;
+    }
+    if (milkdownEl) {
+      milkdownEl.style.width = saved.mdWidth;
+      milkdownEl.style.maxWidth = saved.mdMax;
+    }
+    // Restore theme + drop export class
+    document.body.classList.remove("exporting");
     html.classList.remove("light");
     if (hadDark) html.classList.add("dark");
     if (hadLight) html.classList.add("light");
@@ -264,12 +368,89 @@ async function init() {
   restoreThemeFromStorage();
 
   // Wire up toolbar buttons
+  document.getElementById("new-btn")?.addEventListener("click", () => newFile(state));
+  document.getElementById("open-btn")?.addEventListener("click", () => openFileDialog(state));
+  // Theme menu: hover reveals three options. Clicking the trigger itself
+  // also cycles (keyboard / tap fallback on machines without hover).
   document.getElementById("theme-toggle")?.addEventListener("click", cycleTheme);
+  document.querySelectorAll<HTMLButtonElement>(".theme-menu-dropdown button[data-theme]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const mode = btn.dataset.theme as ThemeMode;
+      applyThemeMode(mode);
+      // Drop hover focus so the dropdown closes after selection.
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+  });
   document.getElementById("font-toggle")?.addEventListener("click", toggleFont);
   document.getElementById("export-btn")?.addEventListener("click", () => exportPdf(state));
 
+  // Welcome overlay — shown on cold launch with no file
+  document.getElementById("welcome-new")?.addEventListener("click", () => newFile(state));
+  document.getElementById("welcome-open")?.addEventListener("click", () => openFileDialog(state));
+
   // Install window-resize → sizer; openFile triggers it directly on load.
   installAutoSizer(() => state.editor.getCtx());
+
+  // Window dragging via the top bar. CSS `-webkit-app-region: drag` is
+  // unreliable with titleBarStyle: "Overlay" in Tauri/WebKit, so we
+  // drive the drag ourselves: on mousedown over the titlebar or empty
+  // toolbar gaps, call the backend's startDragging(). Buttons and
+  // interactive elements are excluded so clicks still register there.
+  const startDragIfNotInteractive = async (e: Event) => {
+    const me = e as MouseEvent;
+    if (me.button !== 0) return;
+    const target = me.target as HTMLElement;
+    if (target.closest("button, input, textarea, a, [contenteditable]")) return;
+    try {
+      await getCurrentWindow().startDragging();
+    } catch (err) {
+      console.error("startDragging failed:", err);
+    }
+  };
+  document.querySelector(".titlebar")?.addEventListener("mousedown", startDragIfNotInteractive);
+  document.querySelector(".toolbar")?.addEventListener("mousedown", startDragIfNotInteractive);
+
+  // Double-clicking the titlebar toggles maximize, matching macOS convention.
+  document.querySelector(".titlebar")?.addEventListener("dblclick", async (e) => {
+    const target = (e as MouseEvent).target as HTMLElement;
+    if (target.closest("button")) return;
+    const win = getCurrentWindow();
+    const isMax = await win.isMaximized();
+    if (isMax) await win.unmaximize(); else await win.maximize();
+  });
+
+  // Clicking anywhere inside the editor pane — even outside the narrow
+  // .ProseMirror column — should focus the document so the cursor is
+  // visible. Native clicks inside .ProseMirror already position the
+  // caret; we only take over when the click lands on empty padding.
+  root.addEventListener("mousedown", (e) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest(".ProseMirror")) {
+      e.preventDefault();
+      state.editor.focus();
+    }
+  });
+
+  // Make inline links clickable. ProseMirror swallows clicks on anchor
+  // tags to position the caret inside them, so we intercept and route
+  // http(s)/mailto links through Tauri's opener plugin (system browser
+  // / mail client). Internal anchors (#hash) and javascript: links are
+  // ignored. Plain left-click only — modifier-clicks fall through so
+  // the user can still position the cursor with cmd-click if needed.
+  root.addEventListener("click", (e) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    const target = e.target as HTMLElement;
+    const anchor = target.closest("a") as HTMLAnchorElement | null;
+    if (!anchor) return;
+    const href = anchor.getAttribute("href");
+    if (!href) return;
+    if (/^(https?:|mailto:)/i.test(href)) {
+      e.preventDefault();
+      e.stopPropagation();
+      openUrl(href).catch((err) => console.error("openUrl failed:", err));
+    }
+  });
 
   const state: AppState = { path: null, dirty: false, editor };
   editor.onChange(async () => {
@@ -311,6 +492,9 @@ async function init() {
     console.error("frontend_ready failed:", err);
   }
 
+  // Show welcome overlay if we booted without any file
+  if (!state.path) setWelcomeVisible(true);
+
   // Confirm close if dirty
   const win = getCurrentWindow();
   await win.onCloseRequested(async (event) => {
@@ -321,6 +505,24 @@ async function init() {
       });
       if (!discard) event.preventDefault();
     }
+  });
+
+  // WKWebView in Tauri sometimes resets window scrollY to 0 when the app
+  // loses and regains focus (switching apps, ⌘-tab, etc.). Track the latest
+  // scroll position continuously and restore it after focus / visibility
+  // change so the user lands back at the same line they left at.
+  let lastScrollY = 0;
+  window.addEventListener("scroll", () => { lastScrollY = window.scrollY; }, { passive: true });
+  const restoreScroll = () => {
+    // Defer two frames: one for layout to settle, one to override any
+    // scroll-to-top that WKWebView fires after focus.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (window.scrollY !== lastScrollY) window.scrollTo(0, lastScrollY);
+    }));
+  };
+  window.addEventListener("focus", restoreScroll);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") restoreScroll();
   });
 
   // Frontend-side keyboard fallbacks (menu accelerators already handle these,
