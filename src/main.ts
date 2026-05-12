@@ -80,6 +80,10 @@ async function openFile(state: AppState, path: string) {
     setWelcomeVisible(false);
     await updateTitle(state);
     state.editor.focus();
+    // Point the filesystem watcher at the newly-opened file so we get
+    // notified when an external tool (coding agent, editor, build script)
+    // rewrites it.
+    invoke("watch_file", { path }).catch((err) => console.error("watch_file failed:", err));
     // Size columns after the file's tables render. We pass getCtx so
     // the sizer can write widths into ProseMirror's state via the
     // colwidth cell attribute — prosemirror-tables' TableView renders
@@ -110,16 +114,24 @@ async function saveAs(state: AppState): Promise<boolean> {
     filters: [{ name: "Markdown", extensions: ["md"] }],
   });
   if (!path) return false;
+  // Mark before and after the write so the watcher's 750ms suppression
+  // window covers however long the underlying fs call takes.
+  await invoke("mark_self_write").catch(() => { /* noop */ });
   await writeTextFile(path, editorFormatToMarkdown(state.editor.getMarkdown()));
+  await invoke("mark_self_write").catch(() => { /* noop */ });
   state.path = path;
   state.dirty = false;
   await updateTitle(state);
+  // Saving with a new path means the watcher needs to follow the new file.
+  invoke("watch_file", { path }).catch((err) => console.error("watch_file failed:", err));
   return true;
 }
 
 async function save(state: AppState): Promise<boolean> {
   if (!state.path) return saveAs(state);
+  await invoke("mark_self_write").catch(() => { /* noop */ });
   await writeTextFile(state.path, editorFormatToMarkdown(state.editor.getMarkdown()));
+  await invoke("mark_self_write").catch(() => { /* noop */ });
   state.dirty = false;
   await updateTitle(state);
   return true;
@@ -139,6 +151,7 @@ async function newFile(state: AppState) {
   setWelcomeVisible(false);
   await updateTitle(state);
   state.editor.focus();
+  invoke("unwatch_file").catch(() => { /* noop */ });
 }
 
 // Theme: three modes — "system" (follow prefers-color-scheme), "light", "dark".
@@ -479,6 +492,25 @@ async function init() {
   // File opened via Finder double-click or "open with" — listen for subsequent events
   await listen<string>("file-opened", async (ev) => {
     await openFile(state, ev.payload);
+  });
+
+  // External rewrite of the open file (coding agent, editor, build script).
+  // Reload silently if we have no unsaved edits; otherwise prompt before
+  // discarding the user's changes.
+  await listen<string>("file-changed", async (ev) => {
+    if (!state.path || ev.payload !== state.path) return;
+    if (state.dirty) {
+      const reload = await ask(
+        "This file was changed by another program. Reload and discard your edits?",
+        { title: "iso.md", kind: "warning" }
+      );
+      if (!reload) return;
+    }
+    const scrollY = window.scrollY;
+    await openFile(state, state.path);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
+    }));
   });
 
   // Drain any file paths that arrived before the listener was attached

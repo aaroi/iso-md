@@ -1,4 +1,13 @@
-use std::sync::Mutex;
+use std::ffi::OsString;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use notify_debouncer_mini::{
+    new_debouncer,
+    notify::{RecommendedWatcher, RecursiveMode},
+    DebounceEventResult, Debouncer,
+};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder, PredefinedMenuItem},
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, RunEvent, State,
@@ -14,6 +23,104 @@ pub struct PendingFiles {
 fn frontend_ready(state: State<PendingFiles>) -> Vec<String> {
     *state.ready.lock().unwrap() = true;
     std::mem::take(&mut *state.paths.lock().unwrap())
+}
+
+// File watcher state. We hold one debouncer at a time; opening a new file
+// replaces it. The closure inside the debouncer reads `watched_filename`
+// and `last_self_write_at` via Arc<Mutex<…>> so we can update them from
+// commands without rebuilding the watcher.
+#[derive(Default)]
+pub struct WatcherState {
+    debouncer: Mutex<Option<Debouncer<RecommendedWatcher>>>,
+    watched_filename: Arc<Mutex<Option<OsString>>>,
+    last_self_write_at: Arc<Mutex<Option<Instant>>>,
+}
+
+#[tauri::command]
+fn watch_file(
+    app: AppHandle,
+    state: State<'_, WatcherState>,
+    path: String,
+) -> Result<(), String> {
+    let raw = PathBuf::from(&path);
+    let parent = raw
+        .parent()
+        .ok_or_else(|| "path has no parent directory".to_string())?
+        .to_path_buf();
+    // notify reports events with the path as the OS gave it to the watcher
+    // (no symlink resolution), so compare by basename rather than by
+    // canonical absolute path — agents often write via temp file + rename,
+    // and canonicalize() of the temp path doesn't help.
+    let filename = raw
+        .file_name()
+        .ok_or_else(|| "path has no filename".to_string())?
+        .to_os_string();
+
+    // Drop the previous watcher (this also stops its background thread)
+    // before installing the new one.
+    {
+        let mut slot = state.debouncer.lock().unwrap();
+        *slot = None;
+    }
+
+    *state.watched_filename.lock().unwrap() = Some(filename.clone());
+
+    let watched = state.watched_filename.clone();
+    let self_write = state.last_self_write_at.clone();
+    let app_for_closure = app.clone();
+    let emit_payload = path.clone();
+
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(200),
+        move |res: DebounceEventResult| {
+            let events = match res {
+                Ok(e) => e,
+                Err(err) => {
+                    eprintln!("file watcher error: {err:?}");
+                    return;
+                }
+            };
+
+            let Some(target) = watched.lock().unwrap().clone() else { return };
+
+            // Suppress events that landed within 750ms of our own write.
+            let recent_self_write = self_write
+                .lock()
+                .unwrap()
+                .map(|t| t.elapsed() < Duration::from_millis(750))
+                .unwrap_or(false);
+            if recent_self_write {
+                return;
+            }
+
+            let matched = events
+                .iter()
+                .any(|ev| ev.path.file_name() == Some(target.as_os_str()));
+            if matched {
+                let _ = app_for_closure.emit("file-changed", emit_payload.clone());
+            }
+        },
+    )
+    .map_err(|e| format!("watcher init failed: {e}"))?;
+
+    debouncer
+        .watcher()
+        .watch(&parent, RecursiveMode::NonRecursive)
+        .map_err(|e| format!("watch failed: {e}"))?;
+
+    *state.debouncer.lock().unwrap() = Some(debouncer);
+    Ok(())
+}
+
+#[tauri::command]
+fn unwatch_file(state: State<'_, WatcherState>) {
+    *state.debouncer.lock().unwrap() = None;
+    *state.watched_filename.lock().unwrap() = None;
+}
+
+#[tauri::command]
+fn mark_self_write(state: State<'_, WatcherState>) {
+    *state.last_self_write_at.lock().unwrap() = Some(Instant::now());
 }
 
 
@@ -125,7 +232,13 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .manage(pending)
-        .invoke_handler(tauri::generate_handler![frontend_ready])
+        .manage(WatcherState::default())
+        .invoke_handler(tauri::generate_handler![
+            frontend_ready,
+            watch_file,
+            unwatch_file,
+            mark_self_write
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             let menu = build_menu(&handle)?;
