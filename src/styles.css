@@ -486,6 +486,39 @@ html.font-system body {
   display: block;
 }
 
+/* View toggle — swap icon based on current mode. The body carries
+   `.source-mode` whenever the raw-markdown textarea is showing. */
+.toolbar .view-icon { display: none; }
+body:not(.source-mode) .toolbar .view-icon-source { display: block; }
+body.source-mode .toolbar .view-icon-rendered { display: block; }
+
+/* Source view — a textarea overlay showing the on-disk markdown.
+   Matches the rendered editor's centered 540px column so toggling
+   doesn't shift content horizontally. */
+#source-view {
+  position: fixed;
+  top: 32px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  margin: 0;
+  padding: 24px max(24px, calc((100% - var(--content-max)) / 2));
+  border: 0;
+  outline: none;
+  resize: none;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13.5px;
+  line-height: 1.55;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow: auto;
+}
+#source-view[hidden] { display: none; }
+body.source-mode #editor { display: none; }
+
 /* Theme menu — hover-triggered dropdown of three icon options
    (Auto / Light / Dark). The trigger button shows the icon of the
    currently-active mode; the dropdown reveals all three when the

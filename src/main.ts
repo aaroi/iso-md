@@ -12,7 +12,10 @@ interface AppState {
   path: string | null;
   dirty: boolean;
   editor: EditorHandle;
+  viewMode: ViewMode;
 }
+
+type ViewMode = "rendered" | "source";
 
 function basename(path: string): string {
   const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
@@ -74,12 +77,17 @@ function setWelcomeVisible(visible: boolean) {
 async function openFile(state: AppState, path: string) {
   try {
     const content = await readTextFile(path);
-    await state.editor.setMarkdown(markdownToEditorFormat(content));
+    if (state.viewMode === "source") {
+      getSourceTextarea().value = content;
+    } else {
+      await state.editor.setMarkdown(markdownToEditorFormat(content));
+    }
     state.path = path;
     state.dirty = false;
     setWelcomeVisible(false);
     await updateTitle(state);
-    state.editor.focus();
+    if (state.viewMode === "source") getSourceTextarea().focus();
+    else state.editor.focus();
     // Point the filesystem watcher at the newly-opened file so we get
     // notified when an external tool (coding agent, editor, build script)
     // rewrites it.
@@ -108,6 +116,14 @@ async function openFileDialog(state: AppState) {
   if (typeof selected === "string") await openFile(state, selected);
 }
 
+function currentMarkdownForSave(state: AppState): string {
+  // In source mode the textarea already holds on-disk format; in
+  // rendered mode we need to reverse the yaml-fence preprocessing.
+  return state.viewMode === "source"
+    ? getSourceTextarea().value
+    : editorFormatToMarkdown(state.editor.getMarkdown());
+}
+
 async function saveAs(state: AppState): Promise<boolean> {
   const path = await saveDialog({
     defaultPath: state.path ?? "Untitled.md",
@@ -117,7 +133,7 @@ async function saveAs(state: AppState): Promise<boolean> {
   // Mark before and after the write so the watcher's 750ms suppression
   // window covers however long the underlying fs call takes.
   await invoke("mark_self_write").catch(() => { /* noop */ });
-  await writeTextFile(path, editorFormatToMarkdown(state.editor.getMarkdown()));
+  await writeTextFile(path, currentMarkdownForSave(state));
   await invoke("mark_self_write").catch(() => { /* noop */ });
   state.path = path;
   state.dirty = false;
@@ -130,7 +146,7 @@ async function saveAs(state: AppState): Promise<boolean> {
 async function save(state: AppState): Promise<boolean> {
   if (!state.path) return saveAs(state);
   await invoke("mark_self_write").catch(() => { /* noop */ });
-  await writeTextFile(state.path, editorFormatToMarkdown(state.editor.getMarkdown()));
+  await writeTextFile(state.path, currentMarkdownForSave(state));
   await invoke("mark_self_write").catch(() => { /* noop */ });
   state.dirty = false;
   await updateTitle(state);
@@ -146,12 +162,59 @@ async function newFile(state: AppState) {
     if (!keep) return;
   }
   await state.editor.setMarkdown("");
+  getSourceTextarea().value = "";
   state.path = null;
   state.dirty = false;
   setWelcomeVisible(false);
   await updateTitle(state);
-  state.editor.focus();
+  if (state.viewMode === "source") getSourceTextarea().focus();
+  else state.editor.focus();
   invoke("unwatch_file").catch(() => { /* noop */ });
+}
+
+function getSourceTextarea(): HTMLTextAreaElement {
+  return document.getElementById("source-view") as HTMLTextAreaElement;
+}
+
+async function setViewMode(state: AppState, mode: ViewMode) {
+  if (mode === state.viewMode) return;
+  const textarea = getSourceTextarea();
+  const btn = document.getElementById("view-toggle");
+
+  if (mode === "source") {
+    // Pull current markdown out of the editor in on-disk format
+    // (reverse the yaml-fence preprocessing).
+    textarea.value = editorFormatToMarkdown(state.editor.getMarkdown());
+    document.body.classList.add("source-mode");
+    textarea.hidden = false;
+    btn?.setAttribute("aria-pressed", "true");
+    btn?.setAttribute("title", "Show rendered view");
+    textarea.focus();
+  } else {
+    // Feed the (possibly edited) raw markdown back through the
+    // preprocessor and rebuild the editor.
+    const md = markdownToEditorFormat(textarea.value);
+    textarea.hidden = true;
+    document.body.classList.remove("source-mode");
+    btn?.setAttribute("aria-pressed", "false");
+    btn?.setAttribute("title", "Toggle source view");
+    await state.editor.setMarkdown(md);
+    state.editor.focus();
+  }
+
+  state.viewMode = mode;
+  try { localStorage.setItem("iso.md.view-mode", mode); } catch { /* noop */ }
+}
+
+function restoreViewModeFromStorage(state: AppState) {
+  try {
+    const stored = localStorage.getItem("iso.md.view-mode");
+    if (stored === "source") {
+      // Fire-and-forget — setViewMode is async but we only chain it
+      // after any pending file load has populated the editor.
+      void setViewMode(state, "source");
+    }
+  } catch { /* noop */ }
 }
 
 // Theme: three modes — "system" (follow prefers-color-scheme), "light", "dark".
@@ -397,6 +460,18 @@ async function init() {
   });
   document.getElementById("font-toggle")?.addEventListener("click", toggleFont);
   document.getElementById("export-btn")?.addEventListener("click", () => exportPdf(state));
+  document.getElementById("view-toggle")?.addEventListener("click", () => {
+    setViewMode(state, state.viewMode === "rendered" ? "source" : "rendered");
+  });
+
+  // Source-view textarea: typing dirties the file, same as the editor's
+  // onChange path below.
+  getSourceTextarea().addEventListener("input", async () => {
+    if (!state.dirty) {
+      state.dirty = true;
+      await updateTitle(state);
+    }
+  });
 
   // Welcome overlay — shown on cold launch with no file
   document.getElementById("welcome-new")?.addEventListener("click", () => newFile(state));
@@ -465,7 +540,7 @@ async function init() {
     }
   });
 
-  const state: AppState = { path: null, dirty: false, editor };
+  const state: AppState = { path: null, dirty: false, editor, viewMode: "rendered" };
   editor.onChange(async () => {
     if (!state.dirty) {
       state.dirty = true;
@@ -526,6 +601,10 @@ async function init() {
 
   // Show welcome overlay if we booted without any file
   if (!state.path) setWelcomeVisible(true);
+
+  // Restore source/rendered preference last, so any pending file load
+  // has already populated the editor we're about to read from.
+  restoreViewModeFromStorage(state);
 
   // Confirm close if dirty
   const win = getCurrentWindow();
