@@ -19,6 +19,9 @@ Built on Tauri v2 + Milkdown. The shipped `.app` is ~10 MB.
 - **Live preview, Typora-style.** Markdown renders inline as you type,
   powered by Milkdown + ProseMirror + remark (CommonMark & GFM: tables,
   task lists, strikethrough).
+- **Flip to raw markdown anytime.** Toolbar toggle swaps the rendered
+  view for an editable plain-text view of the on-disk source —
+  frontmatter and all. Edit either way; the file round-trips byte-for-byte.
 - **Monospace by default, system font one click away.** Toggle in the
   top-right toolbar.
 - **Grayscale UI, light/dark/auto.** No blue tints, no color noise.
