@@ -34,6 +34,12 @@ async function updateTitle(state: AppState) {
     el.textContent = name;
     el.classList.toggle("dirty", state.dirty);
   }
+
+  // Tell the backend which document this window holds so it can focus
+  // an already-open file instead of opening a duplicate, and reuse a
+  // pristine window instead of stacking an empty one.
+  invoke("set_window_state", { path: state.path, dirty: state.dirty })
+    .catch(() => { /* noop */ });
 }
 
 // YAML frontmatter round-trip.
@@ -108,12 +114,21 @@ async function openFile(state: AppState, path: string) {
   }
 }
 
-async function openFileDialog(state: AppState) {
+// The dialog runs in the calling window, but the backend decides where
+// each file lands: focus it if already open, reuse this window if it's a
+// pristine/empty doc, otherwise spawn a new window (one per file).
+async function openFileDialog() {
   const selected = await openDialog({
-    multiple: false,
+    multiple: true,
     filters: [{ name: "Markdown", extensions: ["md", "markdown", "mdx", "txt"] }],
   });
-  if (typeof selected === "string") await openFile(state, selected);
+  if (!selected) return;
+  const paths = Array.isArray(selected) ? selected : [selected];
+  if (paths.length > 0) {
+    await invoke("open_files", { paths }).catch((e) =>
+      console.error("open_files failed:", e),
+    );
+  }
 }
 
 function currentMarkdownForSave(state: AppState): string {
@@ -170,6 +185,17 @@ async function newFile(state: AppState) {
   if (state.viewMode === "source") getSourceTextarea().focus();
   else state.editor.focus();
   invoke("unwatch_file").catch(() => { /* noop */ });
+}
+
+// "New" (Cmd+N / toolbar / menu) opens its own window — except when the
+// current window is already an empty untitled doc, in which case we just
+// use it rather than leaving an orphan empty window behind.
+async function requestNew(state: AppState) {
+  if (!state.path && !state.dirty) {
+    await newFile(state);
+  } else {
+    await invoke("new_window").catch((e) => console.error("new_window failed:", e));
+  }
 }
 
 function getSourceTextarea(): HTMLTextAreaElement {
@@ -444,8 +470,8 @@ async function init() {
   restoreThemeFromStorage();
 
   // Wire up toolbar buttons
-  document.getElementById("new-btn")?.addEventListener("click", () => newFile(state));
-  document.getElementById("open-btn")?.addEventListener("click", () => openFileDialog(state));
+  document.getElementById("new-btn")?.addEventListener("click", () => requestNew(state));
+  document.getElementById("open-btn")?.addEventListener("click", () => openFileDialog());
   // Theme menu: hover reveals three options. Clicking the trigger itself
   // also cycles (keyboard / tap fallback on machines without hover).
   document.getElementById("theme-toggle")?.addEventListener("click", cycleTheme);
@@ -475,7 +501,7 @@ async function init() {
 
   // Welcome overlay — shown on cold launch with no file
   document.getElementById("welcome-new")?.addEventListener("click", () => newFile(state));
-  document.getElementById("welcome-open")?.addEventListener("click", () => openFileDialog(state));
+  document.getElementById("welcome-open")?.addEventListener("click", () => openFileDialog());
 
   // Install window-resize → sizer; openFile triggers it directly on load.
   installAutoSizer(() => state.editor.getCtx());
@@ -552,8 +578,8 @@ async function init() {
   // Listen for menu events from Rust backend
   await listen<string | null>("menu", async (ev) => {
     switch (ev.payload) {
-      case "new": await newFile(state); break;
-      case "open": await openFileDialog(state); break;
+      case "new": await requestNew(state); break;
+      case "open": await openFileDialog(); break;
       case "save": await save(state); break;
       case "save-as": await saveAs(state); break;
       case "export-pdf": await exportPdf(state); break;
@@ -591,10 +617,8 @@ async function init() {
   // Drain any file paths that arrived before the listener was attached
   // (e.g. cold launch from a double-click in Finder)
   try {
-    const pending = await invoke<string[]>("frontend_ready");
-    if (pending.length > 0) {
-      await openFile(state, pending[0]);
-    }
+    const pending = await invoke<string | null>("frontend_ready");
+    if (pending) await openFile(state, pending);
   } catch (err) {
     console.error("frontend_ready failed:", err);
   }
